@@ -17,13 +17,13 @@ CORPUS_DIR = Path(__file__).resolve().parent.parent / "corpus"
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 
-# --- tablas de reemplazo ---
-# estos mapeos salen de analizar los pdfs del corpus con un script aparte.
-# cada entrada resuelve un problema real encontrado en al menos un archivo.
+# tablas de reemplazo..
+# estos mapeos salen de analizar los pdfs del corpus con un script aparte
+# cada entrada resuelve un problema real encontrado en al menos un archivo
 
-# ligaduras tipograficas que mete el pdf cuando el font las usa
+# tablas de equivalencias que mete el pdf cuando el font las usa
 LIGADURAS = {
-    '\uFB01': 'fi',
+    '\uFB01': 'fi', #os {} definen un Diccionario (clave: valor)
     '\uFB02': 'fl',
     '\uFB03': 'ffi',
     '\uFB04': 'ffl',
@@ -50,12 +50,13 @@ BULLETS = {
     '\u2022': '-',     # bullet clasico
 }
 
+#aca aplicamos patrones de busqueda inteligentes
 # regex para chars del area privada unicode (wingdings, symbol, etc)
 RE_PRIVATE_USE = re.compile(r'[\uF000-\uF8FF]')
 
-# regex para palabras pegadas por culpa de pypdf
-# detecta "minusculaMayuscula" y mete un espacio en el medio,
-# pero solo cuando la parte en mayuscula tiene 3+ letras (para no romper cosas como "iPhone")
+""" regex para palabras pegadas por culpa de pypdf
+detecta "minusculaMayuscula" y mete un espacio en el medio,
+pero solo cuando la parte en mayuscula tiene 3+ letras (para no romper cosas como "iPhone")"""
 RE_PALABRAS_PEGADAS = re.compile(r'([a-záéíóúñü])([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,})')
 
 
@@ -73,7 +74,6 @@ def extraer_texto(pdf_path):
 def sanear(texto):
     """
     pipeline de limpieza.
-    cada paso esta numerado para que sea facil de seguir.
     el orden importa: primero normalizamos chars, despues estructura.
     """
 
