@@ -1,3 +1,7 @@
+---
+modelo: Claude Opus 4.6 medium effort, Orquestador de subagentes utilizando Claude Sonnet 4.6 high effort. 
+---
+
 ### Goal
 Tendras como trabajo desarrollar un script de Python encargado exclusivamente de Chunking, Embedding y Persistencia de datos. El mismo será invocado por otro procedimiento, llamado Limpieza, que se encargara de traerte el documento en formato TOON dentro de un string, para que hagas el proceso de chunking, embedding, y persistencia en la base de datos vectorial de Chroma. 
 Al terminar el procesamiento de los datos, se guardará en /data/ un JSON llamado registry.json que contenga un arreglo con los documentos cargados, junto a otra metadata importante como lo es: filename, materia, sha256, fecha procesamiento, cantidad de chunks, parametros usados para procesar el documento (chunk size, chunk overlap, embedding model), y el state (incorporado / error).
