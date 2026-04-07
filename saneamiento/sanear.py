@@ -13,7 +13,7 @@ import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from carga import procesar_documento
+from carga import procesar_lote_documentos
 
 ROOT        = Path(__file__).resolve().parent.parent
 CORPUS_DIR  = ROOT / "corpus"
@@ -206,6 +206,10 @@ def main():
         toon_path = OUTPUT_DIR / f"{pdf_path.stem}.toon"
         guardar_toon(doc, toon_path)
 
+        # Derivamos la materia del subdirectorio en corpus/
+        relative = pdf_path.relative_to(CORPUS_DIR)
+        materia = relative.parts[0] if len(relative.parts) > 1 else "General"
+
         # Actualizamos el estado para la etapa de embeddings (carga.py)
         registro[nombre] = {
             "sha256":         sha256,
@@ -213,37 +217,32 @@ def main():
             "pages":          num_paginas,
             "chars_original": len(texto_crudo),
             "chars_saneado":  len(texto_limpio),
-            "cargado_en_chroma": False,   # FIXME: no olvidar cambiar a True en carga
+            "cargado_en_chroma": False,
+            "materia":        materia,
         }
 
         procesados.append(doc)
 
-        # Guardamos el registro antes de llamar a carga (carga.py lo lee y actualiza)
+        # Guardamos el registro por si el script falla al parsear el siguiente
         guardar_registro(registro)
 
-        # Derivamos la materia del subdirectorio en corpus/
-        relative = pdf_path.relative_to(CORPUS_DIR)
-        materia = relative.parts[0] if len(relative.parts) > 1 else "General"
-
-        # Cargamos en ChromaDB — error no detiene el pipeline de saneamiento
+    # === FASE 2: CARGA EN LOTE A CHROMA ===
+    nuevos_archivos = [doc['source'] for doc in procesados]
+    
+    if nuevos_archivos:
+        print(f"\n[sanear] Iniciando carga en lote a ChromaDB para {len(nuevos_archivos)} archivos nuevos...")
         try:
-            with open(toon_path, 'r', encoding='utf-8') as f:
-                toon_str = f.read()
-            procesar_documento(
-                toon_content=toon_str,
-                filename=nombre,
-                sha256=sha256,
-                materia=materia,
-            )
-            cargados.append(nombre)
+            resultados = procesar_lote_documentos(nuevos_archivos)
+            for nombre, ok in resultados:
+                if ok:
+                    cargados.append(nombre)
+                else:
+                    carga_errores.append(nombre)
         except Exception as e:
-            print(f"  [carga-error] {nombre}: {e}")
-            carga_errores.append(nombre)
+            print(f"[sanear] FATAL ERROR en carga por lote: {e}")
 
-        # Recargamos el registro por si carga.py lo actualizó
-        registro = cargar_registro()
-
-    guardar_registro(registro)
+    # Recargamos el registro final por si carga.py lo actualizó internamente
+    registro = cargar_registro()
     imprimir_reporte(procesados, salteados, cargados, carga_errores)
 
 if __name__ == "__main__":

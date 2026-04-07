@@ -87,47 +87,41 @@ def es_titulo(linea: str) -> bool:
 
 
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
-    # Build a map from char position to section by scanning full text
-    section_at_pos = {}
-    current_section = ""
-    pos = 0
-    for line in text.split("\n"):
+    # Separamos el texto por secciones (títulos) para evitar rastrear posiciones manualmente
+    sections = []
+    lines = text.split("\n")
+    current_title = "Intro / Sin título"
+    current_lines = []
+
+    for line in lines:
         if es_titulo(line):
-            current_section = line.strip()
-        section_at_pos[pos] = current_section
-        pos += len(line) + 1  # +1 for the \n
+            if current_lines:
+                sections.append((current_title, "\n".join(current_lines)))
+            current_title = line.strip()
+            current_lines = [line]  # Incluimos el título como parte del contenido para contexto
+        else:
+            current_lines.append(line)
+    
+    if current_lines:
+        sections.append((current_title, "\n".join(current_lines)))
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
-    raw_chunks = splitter.split_text(text)
 
-    # For each chunk, find its start position in the original text
     documents = []
-    search_start = 0
-    for i, chunk in enumerate(raw_chunks):
-        chunk_pos = text.find(chunk[:80], search_start)
-        if chunk_pos == -1:
-            chunk_pos = text.find(chunk[:40], search_start)
-        if chunk_pos == -1:
-            print(f"[carga] WARN: no se encontró posición exacta del chunk {i}, usando aproximación")
-            chunk_pos = search_start
-
-        # Find closest section at or before chunk_pos
-        seccion = ""
-        for p in sorted(section_at_pos.keys()):
-            if p <= chunk_pos:
-                seccion = section_at_pos[p]
-            else:
-                break
-
-        documents.append(Document(
-            page_content=chunk,
-            metadata={**base_metadata, "seccion": seccion, "chunk_index": i},
-        ))
-        search_start = max(0, chunk_pos + len(chunk) - config.chunk_overlap)
+    chunk_idx = 0
+    for title, content in sections:
+        # Realizamos el chunking sobre cada sección de forma aislada y precisa
+        raw_chunks = splitter.split_text(content)
+        for chunk in raw_chunks:
+            documents.append(Document(
+                page_content=chunk,
+                metadata={**base_metadata, "seccion": title, "chunk_index": chunk_idx},
+            ))
+            chunk_idx += 1
 
     return documents
 
@@ -198,113 +192,118 @@ def guardar_registro(registro: dict):
         json.dump(registro, f, ensure_ascii=False, indent=2)
 
 
-def procesar_documento(
-    toon_content: str,
-    filename: str,
-    sha256: str,
-    materia: str,
+def procesar_lote_documentos(
+    archivos: list[str],
     config: CargaConfig | None = None,
-) -> dict:
+) -> list[tuple[str, bool]]:
     if not os.environ.get("GOOGLE_API_KEY"):
         raise EnvironmentError("GOOGLE_API_KEY no encontrada en el entorno. Configurá el .env.")
 
     config = config or CargaConfig()
 
     if config.chunking_technique not in CHUNKERS:
-        raise ValueError(
-            f"chunking_technique inválido: '{config.chunking_technique}'. "
-            f"Opciones: {list(CHUNKERS.keys())}"
-        )
+        raise ValueError(f"chunking_technique inválido: '{config.chunking_technique}'. Opciones: {list(CHUNKERS.keys())}")
 
     if config.chunk_overlap >= config.chunk_size:
-        raise ValueError(
-            f"chunk_overlap ({config.chunk_overlap}) debe ser menor que chunk_size ({config.chunk_size})"
-        )
+        raise ValueError(f"chunk_overlap ({config.chunk_overlap}) debe ser menor que chunk_size ({config.chunk_size})")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    try:
-        parsed = parsear_toon(toon_content)
-        content = parsed["content"]
-
-        print(f"[carga] Procesando {filename}...")
-
-        chunker = CHUNKERS[config.chunking_technique]
-        base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
-        chunks = chunker(content, config, base_metadata)
-
-        base_embeddings = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
-        EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        embeddings = CacheBackedEmbeddings.from_bytes_store(
-            underlying_embeddings=base_embeddings,
-            document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
-            namespace=f"models/{config.embedding_model}",
-        )
-        vectorstore = Chroma(
-            collection_name=COLLECTION_NAME,
-            persist_directory=str(DATA_DIR),
-            embedding_function=embeddings,
-        )
-        existing = vectorstore.get(where={"documento": filename})
-        if existing and existing["ids"]:
-            vectorstore.delete(ids=existing["ids"])
-
-        vectorstore.add_documents(chunks)
-
-    except Exception as e:
-        print(f"[carga] ERROR procesando {filename}: {e}")
-
-        registro = cargar_registro()
-        if filename not in registro:
-            registro[filename] = {"sha256": sha256}
-
-        registro[filename]["cargado_en_chroma"] = False
-        registro[filename]["carga"] = {
-            "fecha_procesamiento": datetime.now().isoformat(),
-            "cantidad_chunks": 0,
-            "params": {
-                "chunk_size": config.chunk_size,
-                "chunk_overlap": config.chunk_overlap,
-                "embedding_model": config.embedding_model,
-                "chunking_technique": config.chunking_technique,
-            },
-            "state": "error",
-            "error_message": str(e),
-        }
-        guardar_registro(registro)
-        raise
-
-    carga_info = {
-        "fecha_procesamiento": datetime.now().isoformat(),
-        "cantidad_chunks": len(chunks),
-        "params": {
-            "chunk_size": config.chunk_size,
-            "chunk_overlap": config.chunk_overlap,
-            "embedding_model": config.embedding_model,
-            "chunking_technique": config.chunking_technique,
-        },
-        "state": "incorporado",
-        "error_message": None,
-    }
+    print(f"[carga] Inicializando modelos y ChromaDB para {len(archivos)} archivo(s)...")
+    base_embeddings = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
+    embeddings = CacheBackedEmbeddings.from_bytes_store(
+        underlying_embeddings=base_embeddings,
+        document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
+        namespace=f"models/{config.embedding_model}",
+    )
+    vectorstore = Chroma(
+        collection_name=COLLECTION_NAME,
+        persist_directory=str(DATA_DIR),
+        embedding_function=embeddings,
+    )
 
     registro = cargar_registro()
-    if filename not in registro:
-        registro[filename] = {"sha256": sha256}
+    chunker = CHUNKERS[config.chunking_technique]
+    resultados = []
 
-    registro[filename]["cargado_en_chroma"] = True
-    registro[filename]["carga"] = carga_info
+    for filename in archivos:
+        if filename not in registro:
+            print(f"[carga] ERROR: {filename} no está en el registro.")
+            resultados.append((filename, False))
+            continue
+            
+        entry = registro[filename]
+        toon_path = ROOT / entry.get("toon", "")
+        if not toon_path.exists():
+            print(f"[carga] ERROR: El archivo {toon_path} no existe.")
+            resultados.append((filename, False))
+            continue
+
+        materia = entry.get("materia", "General")
+        sha256 = entry.get("sha256", "")
+        
+        try:
+            with open(toon_path, "r", encoding="utf-8") as f:
+                toon_content = f.read()
+
+            parsed = parsear_toon(toon_content)
+            content = parsed["content"]
+
+            print(f"[carga] Procesando {filename}  (Sección: {materia})...")
+
+            base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
+            chunks = chunker(content, config, base_metadata)
+
+            existing = vectorstore.get(where={"documento": filename})
+            if existing and existing["ids"]:
+                vectorstore.delete(ids=existing["ids"])
+
+            vectorstore.add_documents(chunks)
+
+            carga_info = {
+                "fecha_procesamiento": datetime.now().isoformat(),
+                "cantidad_chunks": len(chunks),
+                "params": {
+                    "chunk_size": config.chunk_size,
+                    "chunk_overlap": config.chunk_overlap,
+                    "embedding_model": config.embedding_model,
+                    "chunking_technique": config.chunking_technique,
+                },
+                "state": "incorporado",
+                "error_message": None,
+            }
+            
+            registro[filename]["cargado_en_chroma"] = True
+            registro[filename]["carga"] = carga_info
+            
+            print(f"[carga]   -> OK: {len(chunks)} chunks ingresados a ChromaDB")
+            resultados.append((filename, True))
+
+        except Exception as e:
+            print(f"[carga] ERROR procesando {filename}: {e}")
+            registro[filename]["cargado_en_chroma"] = False
+            registro[filename]["carga"] = {
+                "fecha_procesamiento": datetime.now().isoformat(),
+                "cantidad_chunks": 0,
+                "params": {
+                    "chunk_size": config.chunk_size,
+                    "chunk_overlap": config.chunk_overlap,
+                    "embedding_model": config.embedding_model,
+                    "chunking_technique": config.chunking_technique,
+                },
+                "state": "error",
+                "error_message": str(e),
+            }
+            resultados.append((filename, False))
+
     guardar_registro(registro)
-
-    print(f"[carga] {filename} OK — {len(chunks)} chunks generados")
-    return carga_info
+    return resultados
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Carga documentos .toon en ChromaDB para RAG")
-    parser.add_argument("--toon-content", required=True, help="Contenido TOON del documento")
-    parser.add_argument("--filename", required=True, help="Nombre original del archivo")
-    parser.add_argument("--sha256", required=True, help="Hash SHA256 del documento")
-    parser.add_argument("--materia", required=True, help="Nombre de la materia")
+    parser = argparse.ArgumentParser(description="Carga un lote de documentos en ChromaDB para RAG")
+    parser.add_argument("--archivos", nargs="+", required=True, help="Lista de nombre de archivos (ej. tp1.pdf) registrados")
     parser.add_argument("--chunk-size", type=int, default=512)
     parser.add_argument("--chunk-overlap", type=int, default=50)
     parser.add_argument("--embedding-model", type=str, default="gemini-embedding-001")
@@ -324,11 +323,8 @@ def main():
         chunking_technique=args.chunking_technique,
     )
 
-    procesar_documento(
-        toon_content=args.toon_content,
-        filename=args.filename,
-        sha256=args.sha256,
-        materia=args.materia,
+    procesar_lote_documentos(
+        archivos=args.archivos,
         config=config,
     )
 
