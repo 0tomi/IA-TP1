@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import json, os, re, argparse
+import json, os, re, argparse, time
 from datetime import datetime
 from pathlib import Path
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -25,6 +25,9 @@ class CargaConfig:
     chunk_overlap: int = 50
     embedding_model: str = "gemini-embedding-001"
     chunking_technique: str = "recursive"  # "recursive" | "fixed_size_overlap" | "paragraph_custom"
+    embedding_batch_size: int = 20
+    max_retries: int = 3
+    retry_wait_seconds: int = 60
 
 
 def parsear_toon(toon_str: str) -> dict:
@@ -192,6 +195,47 @@ def guardar_registro(registro: dict):
         json.dump(registro, f, ensure_ascii=False, indent=2)
 
 
+def es_error_de_rate_limit(error: Exception) -> bool:
+    error_text = str(error).upper()
+    return any(token in error_text for token in ("RESOURCE_EXHAUSTED", "RATE LIMIT", "429", "QUOTA"))
+
+
+def construir_chunk_ids(filename: str, sha256: str, chunks: list[Document]) -> list[str]:
+    version = sha256 or "sin-sha"
+    return [f"{filename}:{version}:{chunk.metadata['chunk_index']}" for chunk in chunks]
+
+
+def agregar_documentos_en_lotes(
+    vectorstore: Chroma,
+    chunks: list[Document],
+    chunk_ids: list[str],
+    config: CargaConfig,
+):
+    total_batches = (len(chunks) + config.embedding_batch_size - 1) // config.embedding_batch_size
+
+    for batch_index, start in enumerate(range(0, len(chunks), config.embedding_batch_size), start=1):
+        batch_chunks = chunks[start:start + config.embedding_batch_size]
+        batch_ids = chunk_ids[start:start + config.embedding_batch_size]
+
+        for attempt in range(1, config.max_retries + 2):
+            try:
+                print(
+                    f"[carga]   -> Batch {batch_index}/{total_batches}: {len(batch_chunks)} chunks "
+                    f"(intento {attempt}/{config.max_retries + 1})"
+                )
+                vectorstore.add_documents(batch_chunks, ids=batch_ids)
+                break
+            except Exception as error:
+                if not es_error_de_rate_limit(error) or attempt > config.max_retries:
+                    raise
+
+                print(
+                    f"[carga]   -> Rate limit detectado en batch {batch_index}/{total_batches}: {error}. "
+                    f"Esperando {config.retry_wait_seconds}s antes de reintentar..."
+                )
+                time.sleep(config.retry_wait_seconds)
+
+
 def procesar_lote_documentos(
     archivos: list[str],
     config: CargaConfig | None = None,
@@ -206,6 +250,15 @@ def procesar_lote_documentos(
 
     if config.chunk_overlap >= config.chunk_size:
         raise ValueError(f"chunk_overlap ({config.chunk_overlap}) debe ser menor que chunk_size ({config.chunk_size})")
+
+    if config.embedding_batch_size <= 0:
+        raise ValueError(f"embedding_batch_size ({config.embedding_batch_size}) debe ser mayor a 0")
+
+    if config.max_retries < 0:
+        raise ValueError(f"max_retries ({config.max_retries}) no puede ser negativo")
+
+    if config.retry_wait_seconds <= 0:
+        raise ValueError(f"retry_wait_seconds ({config.retry_wait_seconds}) debe ser mayor a 0")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -254,12 +307,13 @@ def procesar_lote_documentos(
 
             base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
             chunks = chunker(content, config, base_metadata)
+            chunk_ids = construir_chunk_ids(filename, sha256, chunks)
 
             existing = vectorstore.get(where={"documento": filename})
             if existing and existing["ids"]:
                 vectorstore.delete(ids=existing["ids"])
 
-            vectorstore.add_documents(chunks)
+            agregar_documentos_en_lotes(vectorstore, chunks, chunk_ids, config)
 
             carga_info = {
                 "fecha_procesamiento": datetime.now().isoformat(),
@@ -269,6 +323,9 @@ def procesar_lote_documentos(
                     "chunk_overlap": config.chunk_overlap,
                     "embedding_model": config.embedding_model,
                     "chunking_technique": config.chunking_technique,
+                    "embedding_batch_size": config.embedding_batch_size,
+                    "max_retries": config.max_retries,
+                    "retry_wait_seconds": config.retry_wait_seconds,
                 },
                 "state": "incorporado",
                 "error_message": None,
@@ -291,6 +348,9 @@ def procesar_lote_documentos(
                     "chunk_overlap": config.chunk_overlap,
                     "embedding_model": config.embedding_model,
                     "chunking_technique": config.chunking_technique,
+                    "embedding_batch_size": config.embedding_batch_size,
+                    "max_retries": config.max_retries,
+                    "retry_wait_seconds": config.retry_wait_seconds,
                 },
                 "state": "error",
                 "error_message": str(e),
@@ -307,6 +367,9 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=512)
     parser.add_argument("--chunk-overlap", type=int, default=50)
     parser.add_argument("--embedding-model", type=str, default="gemini-embedding-001")
+    parser.add_argument("--embedding-batch-size", type=int, default=20)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--retry-wait-seconds", type=int, default=60)
     parser.add_argument(
         "--chunking-technique",
         type=str,
@@ -321,6 +384,9 @@ def main():
         chunk_overlap=args.chunk_overlap,
         embedding_model=args.embedding_model,
         chunking_technique=args.chunking_technique,
+        embedding_batch_size=args.embedding_batch_size,
+        max_retries=args.max_retries,
+        retry_wait_seconds=args.retry_wait_seconds,
     )
 
     procesar_lote_documentos(
