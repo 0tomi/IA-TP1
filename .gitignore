@@ -156,3 +156,5 @@ CLAUDE.md
 # Carga - ChromaDB persistence & embedding cache
 data/chroma/
 data/embeddings_cache/
+data/*
+saneamiento/output/
