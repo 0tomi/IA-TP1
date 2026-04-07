@@ -1,0 +1,18 @@
+[project]
+name = "ia-tp1"
+version = "0.0.0"
+description = "Trabajo práctico para IA, sobre crear un RAG usando LangChain, y crear un chatbot que responda solamente con los conocimientos proporcionados por dicho RAG."
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+    "langchain (>=1.2.15,<2.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
