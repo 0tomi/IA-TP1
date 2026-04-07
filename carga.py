@@ -3,6 +3,8 @@ import json, os, re, argparse
 from datetime import datetime
 from pathlib import Path
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_classic.embeddings import CacheBackedEmbeddings
+from langchain_classic.storage import LocalFileStore
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter, CharacterTextSplitter
 from langchain_core.documents import Document
@@ -14,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 REGISTRY_PATH = DATA_DIR / "registry.json"
 COLLECTION_NAME = "rag_tp1"
+EMBEDDINGS_CACHE_DIR = DATA_DIR / "embeddings_cache"
 
 
 @dataclass
@@ -230,7 +233,13 @@ def procesar_documento(
         base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
         chunks = chunker(content, config, base_metadata)
 
-        embeddings = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
+        base_embeddings = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
+        EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        embeddings = CacheBackedEmbeddings.from_bytes_store(
+            underlying_embeddings=base_embeddings,
+            document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
+            namespace=f"models/{config.embedding_model}",
+        )
         vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
             persist_directory=str(DATA_DIR),

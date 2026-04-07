@@ -153,5 +153,6 @@ cython_debug/
 TP_RAG_LangChain_IA (1).pdf
 CLAUDE.md
 
-# Carga - ChromaDB persistence
+# Carga - ChromaDB persistence & embedding cache
 data/chroma/
+data/embeddings_cache/
