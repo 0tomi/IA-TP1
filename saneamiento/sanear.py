@@ -8,8 +8,12 @@ y exporta en formato .toon. Tiene cache por sha256 para no reprocesar archivos r
 import hashlib
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from carga import procesar_documento
 
 ROOT        = Path(__file__).resolve().parent.parent
 CORPUS_DIR  = ROOT / "corpus"
@@ -129,7 +133,7 @@ def guardar_toon(doc: dict, output_path: Path):
             f'{doc["chars_saneado"]}\n'
         )
 
-def imprimir_reporte(procesados: list, salteados: list):
+def imprimir_reporte(procesados: list, salteados: list, cargados: list, carga_errores: list):
     print("\n" + "=" * 55)
     print("  Reporte RAG - Sanitize")
     print("=" * 55)
@@ -146,8 +150,18 @@ def imprimir_reporte(procesados: list, salteados: list):
         for nombre in salteados:
             print(f"      {nombre}")
 
+    if cargados:
+        print("\n  [chroma] Cargados en ChromaDB:")
+        for nombre in cargados:
+            print(f"      {nombre}")
+
+    if carga_errores:
+        print("\n  [chroma-error] Errores en carga:")
+        for nombre in carga_errores:
+            print(f"      {nombre}")
+
     print(f"\n  {'─'*45}")
-    print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache.")
+    print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache. | {len(cargados)} chroma OK | {len(carga_errores)} chroma err.")
     print("=" * 55)
 
 def main():
@@ -156,6 +170,8 @@ def main():
     registro = cargar_registro()
     procesados = []
     salteados = []
+    cargados = []
+    carga_errores = []
 
     # rglob = escanea las subcarpetas
     pdfs = sorted(CORPUS_DIR.rglob("*.pdf"))
@@ -202,8 +218,33 @@ def main():
 
         procesados.append(doc)
 
+        # Guardamos el registro antes de llamar a carga (carga.py lo lee y actualiza)
+        guardar_registro(registro)
+
+        # Derivamos la materia del subdirectorio en corpus/
+        relative = pdf_path.relative_to(CORPUS_DIR)
+        materia = relative.parts[0] if len(relative.parts) > 1 else "General"
+
+        # Cargamos en ChromaDB — error no detiene el pipeline de saneamiento
+        try:
+            with open(toon_path, 'r', encoding='utf-8') as f:
+                toon_str = f.read()
+            procesar_documento(
+                toon_content=toon_str,
+                filename=nombre,
+                sha256=sha256,
+                materia=materia,
+            )
+            cargados.append(nombre)
+        except Exception as e:
+            print(f"  [carga-error] {nombre}: {e}")
+            carga_errores.append(nombre)
+
+        # Recargamos el registro por si carga.py lo actualizó
+        registro = cargar_registro()
+
     guardar_registro(registro)
-    imprimir_reporte(procesados, salteados)
+    imprimir_reporte(procesados, salteados, cargados, carga_errores)
 
 if __name__ == "__main__":
     main()
