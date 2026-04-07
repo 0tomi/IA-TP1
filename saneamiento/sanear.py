@@ -5,6 +5,7 @@ Extrae texto, limpia ruido tipografico y estructura rota por la extraccion,
 y exporta en formato .toon. Tiene cache por sha256 para no reprocesar archivos repetidos.
 """
 
+import argparse
 import hashlib
 import json
 import re
@@ -13,7 +14,7 @@ import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from carga import procesar_lote_documentos
+from carga import CargaConfig, procesar_lote_documentos
 
 ROOT        = Path(__file__).resolve().parent.parent
 CORPUS_DIR  = ROOT / "corpus"
@@ -164,7 +165,44 @@ def imprimir_reporte(procesados: list, salteados: list, cargados: list, carga_er
     print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache. | {len(cargados)} chroma OK | {len(carga_errores)} chroma err.")
     print("=" * 55)
 
+def parsear_args() -> CargaConfig:
+    parser = argparse.ArgumentParser(
+        description="Saneamiento de PDFs y carga en ChromaDB para el pipeline RAG."
+    )
+    parser.add_argument("--chunk-size", type=int, default=512,
+                        help="Tamaño de cada chunk en caracteres (default: 512)")
+    parser.add_argument("--chunk-overlap", type=int, default=50,
+                        help="Solapamiento entre chunks en caracteres (default: 50)")
+    parser.add_argument("--embedding-model", type=str, default="gemini-embedding-001",
+                        help="Modelo de embeddings a usar (default: gemini-embedding-001)")
+    parser.add_argument(
+        "--chunking-technique",
+        type=str,
+        choices=["recursive", "fixed_size_overlap", "paragraph_custom"],
+        default="recursive",
+        help="Técnica de chunking a usar (default: recursive)",
+    )
+    parser.add_argument("--embedding-batch-size", type=int, default=20,
+                        help="Cantidad de chunks por batch al embedear (default: 20)")
+    parser.add_argument("--max-retries", type=int, default=3,
+                        help="Reintentos ante rate limit (default: 3)")
+    parser.add_argument("--retry-wait-seconds", type=int, default=60,
+                        help="Segundos de espera entre reintentos (default: 60)")
+
+    args = parser.parse_args()
+    return CargaConfig(
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        embedding_model=args.embedding_model,
+        chunking_technique=args.chunking_technique,
+        embedding_batch_size=args.embedding_batch_size,
+        max_retries=args.max_retries,
+        retry_wait_seconds=args.retry_wait_seconds,
+    )
+
+
 def main():
+    config = parsear_args()
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     registro = cargar_registro()
@@ -232,7 +270,7 @@ def main():
     if nuevos_archivos:
         print(f"\n[sanear] Iniciando carga en lote a ChromaDB para {len(nuevos_archivos)} archivos nuevos...")
         try:
-            resultados = procesar_lote_documentos(nuevos_archivos)
+            resultados = procesar_lote_documentos(nuevos_archivos, config=config)
             for nombre, ok in resultados:
                 if ok:
                     cargados.append(nombre)
