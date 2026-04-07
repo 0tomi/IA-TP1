@@ -1,35 +1,31 @@
 """
-saneamiento de corpus pdf para sistema rag.
+Script de saneamiento de PDFs para el pipeline del RAG.
 
-extrae texto de los pdfs en corpus/, lo limpia
-y lo exporta en formato toon para la etapa de chunking.
-
-dependencias: pip install pypdf
+Extrae texto, limpia ruido tipografico y estructura rota por la extraccion,
+y exporta en formato .toon. Tiene cache por sha256 para no reprocesar archivos repetidos.
 """
 
+import hashlib
+import json
 import re
 import unicodedata
 from pathlib import Path
-from pypdf import PdfReader
 
-# rutas relativas al script
-CORPUS_DIR = Path(__file__).resolve().parent.parent / "corpus"
-OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+ROOT        = Path(__file__).resolve().parent.parent
+CORPUS_DIR  = ROOT / "corpus"
+OUTPUT_DIR  = Path(__file__).resolve().parent / "output"
+REGISTRY    = ROOT / "data" / "registry.json"
 
+# Tablas de limpieza hardcodeadas que salieron de revisar a mano que rompe pypdf
+# o que caracteres raros meten las fuentes (ligaduras, webdings, etc)
 
-# tablas de reemplazo..
-# estos mapeos salen de analizar los pdfs del corpus con un script aparte
-# cada entrada resuelve un problema real encontrado en al menos un archivo
-
-# tablas de equivalencias que mete el pdf cuando el font las usa
-LIGADURAS = {
-    '\uFB01': 'fi', #os {} definen un Diccionario (clave: valor)
+LIGADURAS_TIPOGRAFICAS = {
+    '\uFB01': 'fi',
     '\uFB02': 'fl',
     '\uFB03': 'ffi',
     '\uFB04': 'ffl',
 }
 
-# puntuacion unicode -> ascii equivalente
 PUNTUACION = {
     '\u2013': '-',     # en-dash
     '\u2014': '-',     # em-dash
@@ -37,31 +33,46 @@ PUNTUACION = {
     '\u2019': "'",     # comilla simple der
     '\u201C': '"',     # comilla doble izq
     '\u201D': '"',     # comilla doble der
-    '\u2026': '...',   # elipsis
-    '\u2190': '->',    # flecha izquierda (bda usa esto para horarios)
-    '\u2794': '->',    # flecha derecha (metodologia)
+    '\u2026': '...',   # ellipsis
+    '\u2190': '->',    # flecha izq (usada en horarios en tp1)
+    '\u2794': '->',    # flecha der
 }
 
-# bullets decorativos -> guion (para que sea uniforme)
 BULLETS = {
-    '\u25CF': '-',     # circulo negro
-    '\u25CB': '-',     # circulo blanco
-    '\u25A0': '-',     # cuadrado negro
-    '\u2022': '-',     # bullet clasico
+    '\u25CF': '-',
+    '\u25CB': '-',
+    '\u25A0': '-',
+    '\u2022': '-',
 }
 
-#aca aplicamos patrones de busqueda inteligentes
-# regex para chars del area privada unicode (wingdings, symbol, etc)
+# Regex para borrar caracteres de areas privadas de fuentes
 RE_PRIVATE_USE = re.compile(r'[\uF000-\uF8FF]')
 
-""" regex para palabras pegadas por culpa de pypdf
-detecta "minusculaMayuscula" y mete un espacio en el medio,
-pero solo cuando la parte en mayuscula tiene 3+ letras (para no romper cosas como "iPhone")"""
+# Pypdf a veces se come el espacio entre mayuscula y minuscula.
+# E.g. "HolaMundo" -> "Hola Mundo".
+# El {2,} es para no romper siglas tipo "iPhone" o "macOS".
 RE_PALABRAS_PEGADAS = re.compile(r'([a-záéíóúñü])([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,})')
 
+def calcular_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        # Leemos en chunks por si meten un pdf muy pesado
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return h.hexdigest()
 
-def extraer_texto(pdf_path):
-    """extrae todo el texto de un pdf, pagina por pagina."""
+def cargar_registro() -> dict:
+    if REGISTRY.exists() and REGISTRY.stat().st_size > 2:
+        with open(REGISTRY, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def guardar_registro(registro: dict):
+    with open(REGISTRY, 'w', encoding='utf-8') as f:
+        json.dump(registro, f, ensure_ascii=False, indent=2)
+
+def extraer_texto(pdf_path: Path) -> tuple[str, int]:
+    from pypdf import PdfReader
     reader = PdfReader(pdf_path)
     paginas = []
     for page in reader.pages:
@@ -70,148 +81,129 @@ def extraer_texto(pdf_path):
             paginas.append(texto)
     return "\n".join(paginas), len(reader.pages)
 
-
-def sanear(texto):
-    """
-    pipeline de limpieza.
-    el orden importa: primero normalizamos chars, despues estructura.
-    """
-
-    # --- fase 1: normalizar caracteres ---
-
-    # componer acentos unicode (ej: a + tilde combinante -> á)
+def sanear(texto: str) -> str:
+    # 1. Limpieza de caracteres raros
     texto = unicodedata.normalize('NFKC', texto)
 
-    # desarmar ligaduras (ﬁ -> fi, ﬂ -> fl)
-    for lig, reemplazo in LIGADURAS.items():
-        texto = texto.replace(lig, reemplazo)
+    for lig, rmpl in LIGADURAS_TIPOGRAFICAS.items():
+        texto = texto.replace(lig, rmpl)
+    for char, rmpl in PUNTUACION.items():
+        texto = texto.replace(char, rmpl)
+    for char, rmpl in BULLETS.items():
+        texto = texto.replace(char, rmpl)
 
-    # puntuacion tipografica a ascii
-    for char, reemplazo in PUNTUACION.items():
-        texto = texto.replace(char, reemplazo)
-
-    # bullets decorativos a guion
-    for char, reemplazo in BULLETS.items():
-        texto = texto.replace(char, reemplazo)
-
-    # sacar chars privados de fuentes embebidas (quedan como basura invisible)
     texto = RE_PRIVATE_USE.sub('', texto)
 
-    # --- fase 2: reparar estructura rota por la extraccion ---
-
-    # pypdf a veces pega palabras que en el pdf visual estan separadas.
-    # ej: "AvanzadasEquipo" -> "Avanzadas Equipo"
+    # 2. Arreglo de estructura y saltos de linea random de pypdf
     texto = RE_PALABRAS_PEGADAS.sub(r'\1 \2', texto)
 
-    # tambien rompe palabras con saltos de linea espureos
-    # ej: "provistas\n \npor\n \nel" -> "provistas por el"
+    # A veces quedan saltos de linea cortando oraciones a la mitad
     texto = re.sub(r'(?<=[a-záéíóúñü,;])\n \n(?=[a-záéíóúñüA-ZÁÉÍÓÚÑÜ])', ' ', texto)
     texto = re.sub(r'(?<=[a-záéíóúñü,;])\n(?=[a-záéíóúñü])', ' ', texto)
 
-    # --- fase 3: limpiar espacios y lineas ---
-
-    # colapsar espacios multiples en uno (sin tocar los \n)
-    texto = re.sub(r'[^\S\n]+', ' ', texto)
-
-    # espacio antes de punto o coma (artefacto comun)
-    # "palabra ." -> "palabra."
-    texto = re.sub(r' +([.,;:])', r'\1', texto)
-
-    # colapsar saltos de linea excesivos
+    # 3. Trim general y colapso de whitespaces
+    texto = re.sub(r'[^\S\n]+', ' ', texto)            # espacios multiples a uno solo
+    texto = re.sub(r' +([.,;:])', r'\1', texto)        # arregla el espacio feo antes de comas/puntos
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    # numeros de pagina sueltos (lineas que son solo 1-3 digitos)
+    # Vuela numeros sueltos asumiendo que son nros de pagina
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
-
-    # limpiar las lineas vacias que dejaron los pasos anteriores
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
     return texto.strip()
 
-
-# --- formato toon ---
-
-def escapar_toon(text):
-    """escapa comillas y saltos de linea para que el valor sea valido en toon."""
+def escapar_toon(text: str) -> str:
+    # Helper para que no rompa el formato toon
     return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
 
-
-def guardar_toon(documentos, output_path):
-    """
-    guarda en toon (token-oriented object notation).
-    es como un json pero columnar: declara los campos una vez
-    y despues cada linea es un registro. ahorra ~40% de tokens.
-    """
+def guardar_toon(doc: dict, output_path: Path):
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(f"documents[{len(documentos)}]{{content,source,pages,chars_original,chars_saneado}}:\n")
-        for doc in documentos:
-            content = escapar_toon(doc['content'])
-            f.write(f'"{content}",{doc["source"]},{doc["pages"]},{doc["chars_original"]},{doc["chars_saneado"]}\n')
+        f.write("document{content,source,sha256,pages,chars_original,chars_saneado}:\n")
+        content = escapar_toon(doc['content'])
+        f.write(
+            f'"{content}",'
+            f'{doc["source"]},'
+            f'{doc["sha256"]},'
+            f'{doc["pages"]},'
+            f'{doc["chars_original"]},'
+            f'{doc["chars_saneado"]}\n'
+        )
 
-
-# --- reporte ---
-
-def imprimir_reporte(documentos):
-    """muestra un antes/despues por archivo y el total."""
-    total_antes = sum(d['chars_original'] for d in documentos)
-    total_despues = sum(d['chars_saneado'] for d in documentos)
-    reduccion = (1 - total_despues / total_antes) * 100 if total_antes else 0
-
+def imprimir_reporte(procesados: list, salteados: list):
     print("\n" + "=" * 55)
-    print("  reporte de saneamiento")
+    print("  Reporte RAG - Sanitize")
     print("=" * 55)
 
-    for doc in documentos:
-        red = (1 - doc['chars_saneado'] / doc['chars_original']) * 100 if doc['chars_original'] else 0
-        print(f"\n  {doc['source']}")
-        print(f"    {doc['chars_original']:>6,} -> {doc['chars_saneado']:>6,} chars  (-{red:.1f}%)")
+    if procesados:
+        print("\n  [+] Procesados (nuevos/cambios):")
+        for doc in procesados:
+            red = (1 - doc['chars_saneado'] / doc['chars_original']) * 100 if doc['chars_original'] else 0
+            print(f"      {doc['source']}")
+            print(f"      {doc['chars_original']:>6,} -> {doc['chars_saneado']:>6,} chars  (-{red:.1f}%)")
+
+    if salteados:
+        print("\n  [-] Salteados (en cache):")
+        for nombre in salteados:
+            print(f"      {nombre}")
 
     print(f"\n  {'─'*45}")
-    print(f"  total antes:        {total_antes:,} chars")
-    print(f"  total despues:      {total_despues:,} chars")
-    print(f"  reduccion de ruido: {reduccion:.1f}%")
-    print(f"  documentos:         {len(documentos)}")
+    print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache.")
     print("=" * 55)
-
-
-# --- main ---
 
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
-    documentos = []
 
-    print(f"corpus: {CORPUS_DIR}")
-    print(f"output: {OUTPUT_DIR}\n")
+    registro = cargar_registro()
+    procesados = []
+    salteados = []
 
-    pdfs = sorted(CORPUS_DIR.glob("*.pdf"))
+    # rglob = escanea las subcarpetas
+    pdfs = sorted(CORPUS_DIR.rglob("*.pdf"))
     if not pdfs:
-        print("no se encontraron pdfs en el corpus.")
+        print("Aviso: No hay pdfs en el corpus para procesar.")
         return
 
     for pdf_path in pdfs:
         nombre = pdf_path.name
-        print(f"  procesando: {nombre}")
+        sha256 = calcular_sha256(pdf_path)
 
-        texto_crudo, num_paginas = extraer_texto(str(pdf_path))
+        # Chequeamos el cache del registro a ver si podemos skipear la extraccion
+        if nombre in registro and registro[nombre].get("sha256") == sha256:
+            print(f"  [cache] {nombre}")
+            salteados.append(nombre)
+            continue
+
+        print(f"  [proc]  {nombre}")
+
+        texto_crudo, num_paginas = extraer_texto(pdf_path)
         texto_limpio = sanear(texto_crudo)
 
-        documentos.append({
-            'content': texto_limpio,
-            'source': nombre,
-            'pages': num_paginas,
+        doc = {
+            'content':        texto_limpio,
+            'source':         nombre,
+            'sha256':         sha256,
+            'pages':          num_paginas,
             'chars_original': len(texto_crudo),
-            'chars_saneado': len(texto_limpio),
-        })
+            'chars_saneado':  len(texto_limpio),
+        }
 
-        print(f"    {len(texto_crudo):,} -> {len(texto_limpio):,} chars")
+        toon_path = OUTPUT_DIR / f"{pdf_path.stem}.toon"
+        guardar_toon(doc, toon_path)
 
-    # guardar
-    toon_path = OUTPUT_DIR / "corpus_saneado.toon"
-    guardar_toon(documentos, str(toon_path))
-    print(f"\n  guardado: {toon_path}")
+        # Actualizamos el estado para la etapa de embeddings (carga.py)
+        registro[nombre] = {
+            "sha256":         sha256,
+            "toon":           toon_path.relative_to(ROOT).as_posix(),
+            "pages":          num_paginas,
+            "chars_original": len(texto_crudo),
+            "chars_saneado":  len(texto_limpio),
+            "cargado_en_chroma": False,   # FIXME: no olvidar cambiar a True en carga
+        }
 
-    imprimir_reporte(documentos)
+        procesados.append(doc)
 
+    guardar_registro(registro)
+    imprimir_reporte(procesados, salteados)
 
 if __name__ == "__main__":
     main()

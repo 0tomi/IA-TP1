@@ -1,0 +1,146 @@
+{
+  "BDA Planificacion.pdf": {
+    "sha256": "bcd02c46cc00b1f085c0d1462c7a3d24365fe3e41efeeb9d8c86984dff6dca3d",
+    "toon": "saneamiento/output/BDA Planificacion.toon",
+    "pages": 10,
+    "chars_original": 2343,
+    "chars_saneado": 2317,
+    "cargado_en_chroma": false
+  },
+  "1-s2.0-S0957417412003727-main.pdf": {
+    "sha256": "c73edb64d76cf9acbafcc7490c082a8dfa4f2e65a73ffdf9f61abde684b0591d",
+    "toon": "saneamiento/output/1-s2.0-S0957417412003727-main.toon",
+    "pages": 19,
+    "chars_original": 111724,
+    "chars_saneado": 111876,
+    "cargado_en_chroma": false
+  },
+  "2-SistemasExpertos.pdf": {
+    "sha256": "9c66049c22facf7d602f227e807542c38278e2d07431fb40e8ecce22bda1c400",
+    "toon": "saneamiento/output/2-SistemasExpertos.toon",
+    "pages": 6,
+    "chars_original": 10116,
+    "chars_saneado": 10091,
+    "cargado_en_chroma": false
+  },
+  "4-RNA-PSIMPLE-FCYT.pdf": {
+    "sha256": "5ed23320ab2d9f6ac9a5193384fe79a59b2cec0f1dc131556b934a21a70550e6",
+    "toon": "saneamiento/output/4-RNA-PSIMPLE-FCYT.toon",
+    "pages": 20,
+    "chars_original": 33243,
+    "chars_saneado": 33243,
+    "cargado_en_chroma": false
+  },
+  "Cap 8- AGspdf.pdf": {
+    "sha256": "c7ddf977f282e586bfdb325516a4e891209bd3e8cb64ad61e49678da377af76a",
+    "toon": "saneamiento/output/Cap 8- AGspdf.toon",
+    "pages": 23,
+    "chars_original": 30385,
+    "chars_saneado": 30936,
+    "cargado_en_chroma": false
+  },
+  "LogicaDifusa.pdf": {
+    "sha256": "edbc1b757e3ffcdc341aee091db13e4bbf214ec3c8fd51e642cb50630a7494a1",
+    "toon": "saneamiento/output/LogicaDifusa.toon",
+    "pages": 29,
+    "chars_original": 49015,
+    "chars_saneado": 48688,
+    "cargado_en_chroma": false
+  },
+  "Psimple2021.pdf": {
+    "sha256": "67a86c24aeb307e4aab88f10a43ba20ff096060e99caf7415cc9983d50c4f93f",
+    "toon": "saneamiento/output/Psimple2021.toon",
+    "pages": 6,
+    "chars_original": 9444,
+    "chars_saneado": 9423,
+    "cargado_en_chroma": false
+  },
+  "RS_paper_original.pdf": {
+    "sha256": "b851513336bbb43e727493056e6b155aa16f677b40998b71c461dab6c0078f9b",
+    "toon": "saneamiento/output/RS_paper_original.toon",
+    "pages": 12,
+    "chars_original": 64964,
+    "chars_saneado": 64896,
+    "cargado_en_chroma": false
+  },
+  "IA - Programa de Cátedra (campus).pdf": {
+    "sha256": "033e99d2e7b4dcf4e72bdb25f3b430e2e1ddd3a0f7c0bf6e4e2040e86fca2174",
+    "toon": "saneamiento/output/IA - Programa de Cátedra (campus).toon",
+    "pages": 4,
+    "chars_original": 6336,
+    "chars_saneado": 5505,
+    "cargado_en_chroma": false
+  },
+  "SIMPLEX - Casos particulares.pdf": {
+    "sha256": "e058afc2926616c06e431d5918949fbb17bbc3eb53a0f048d3930503b2b5e882",
+    "toon": "saneamiento/output/SIMPLEX - Casos particulares.toon",
+    "pages": 10,
+    "chars_original": 13469,
+    "chars_saneado": 10895,
+    "cargado_en_chroma": false
+  },
+  "U1-Modelos-Teoría.pdf": {
+    "sha256": "76beb3d04f5841660bf9bc56c0e58a2a9db7e4b1d2e9a1f35ac828a152c04184",
+    "toon": "saneamiento/output/U1-Modelos-Teoría.toon",
+    "pages": 9,
+    "chars_original": 24090,
+    "chars_saneado": 23521,
+    "cargado_en_chroma": false
+  },
+  "U2-P Lineal-Teoría.pdf": {
+    "sha256": "fa0c366fd06129659e5a3b602a879f8af07141c6dceb6629dc48544b4480a5c9",
+    "toon": "saneamiento/output/U2-P Lineal-Teoría.toon",
+    "pages": 20,
+    "chars_original": 40997,
+    "chars_saneado": 34375,
+    "cargado_en_chroma": false
+  },
+  "U3-Aplic Progr Lineal-Teoría.pdf": {
+    "sha256": "04c1cb230d5fee8f5b011f8020c38a13774728e4fdc90fbeb07e9086cab9a866",
+    "toon": "saneamiento/output/U3-Aplic Progr Lineal-Teoría.toon",
+    "pages": 37,
+    "chars_original": 81139,
+    "chars_saneado": 71077,
+    "cargado_en_chroma": false
+  },
+  "U4-Programación Dinámica-Teoría.pdf": {
+    "sha256": "1e64fd500694625755d962d39aed841f79266398e8c7fd2ccab879b4211eae57",
+    "toon": "saneamiento/output/U4-Programación Dinámica-Teoría.toon",
+    "pages": 11,
+    "chars_original": 18143,
+    "chars_saneado": 15890,
+    "cargado_en_chroma": false
+  },
+  "Planificación 2025 - Comunicacion y Redes.pdf": {
+    "sha256": "6f2fd2c3aa4444f502e6feb30c23db77e7363eb70a81f394424553566b9e602e",
+    "toon": "saneamiento/output/Planificación 2025 - Comunicacion y Redes.toon",
+    "pages": 5,
+    "chars_original": 18338,
+    "chars_saneado": 18257,
+    "cargado_en_chroma": false
+  },
+  "PROGRAMA - Investigación Operativa.pdf": {
+    "sha256": "de6ba9ca5ade2dc4d61f6bc16e786286dfe36307f67cba1142205dd0299e62ed",
+    "toon": "saneamiento/output/PROGRAMA - Investigación Operativa.toon",
+    "pages": 1,
+    "chars_original": 203,
+    "chars_saneado": 203,
+    "cargado_en_chroma": false
+  },
+  "PROGRAMA INFORMATICA Y RRHH.pdf": {
+    "sha256": "7bcdb56be2b4debb5777c2aa7062fc194f20b39b763d86bb7f5f5cfab8850a80",
+    "toon": "saneamiento/output/PROGRAMA INFORMATICA Y RRHH.toon",
+    "pages": 3,
+    "chars_original": 4843,
+    "chars_saneado": 4838,
+    "cargado_en_chroma": false
+  },
+  "PROGRAMA- Metodología de la Investigación.docx.pdf": {
+    "sha256": "bf1513bcb0cbaa195e9dfe9022646a6f35a6eeca2b03aec3d77e5e4c296ebf8f",
+    "toon": "saneamiento/output/PROGRAMA- Metodología de la Investigación.docx.toon",
+    "pages": 15,
+    "chars_original": 32994,
+    "chars_saneado": 27781,
+    "cargado_en_chroma": false
+  }
+}
