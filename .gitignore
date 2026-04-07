@@ -157,4 +157,4 @@ CLAUDE.md
 data/chroma/
 data/embeddings_cache/
 data/*
-saneamiento/output/
+saneamiento/output/*
