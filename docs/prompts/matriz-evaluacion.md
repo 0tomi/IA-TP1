@@ -1,3 +1,6 @@
+---
+Modelo usado: Claude Opus 4.6 para planear, Sonnet 4.6 para ejecutar.
+---
 ### Goal
 Crear un script llamado evaluacion.py; este script debe leer de un archivo ubicado en la raiz llamado evaluacion.md. El script de evaluacion basicamente iniciara varias conversaciones con el agente de forma iterativa, y le ira pasando las preguntas que esten en el archivo, una a una, esperando cada respuesta, para luego dejarla en una carpeta llamada /tests/ en un formato markdown claro legible para que el usuario pueda saber como fueron las pruebas. En cada iteración se iran alterando parámetros ya sea del proceso de carga, como del RAGService, con el propósito de obtener detalles de investigación.
 
@@ -56,3 +59,9 @@ La n no viene dado por los parametros, ya que muchas personas van a contribuir c
 La arquitectura del sistema te provee todas las herramientas necesarias para hacer esto, el resumen de tu tarea es basicamente crear una nueva interfaz para interactuar con el LLM de forma automatica. 
 Deberas principalmente depender de RAGService, que es el "backend" encargado de proveer las respuestas del LLM, asi como su conexion.
 Cualquier duda que te surja, consultarmela y NO tienes permitido asumir cosas.
+
+--- 
+Prompt anexado: modelo sonnet 4.6
+Ya que estamos, en @recuperacion.py se mezcla toda la configuracion custom del modelo en un solo menu que va de corrido. Hace que cuando la persona elija "Custom" pueda elegir
+entre: Configurar Chunking y Embedding, Configurar Retrieval y LLM, Configurar todo
+Ademas: Tengo instalado llama3.1 como modelo local mediante Ollama en mi pc. Podes evaluar la integracion mediante LangChain de mismo dentro de @rag_service.py para poderse usar? Hay que tener en cuenta una cosa al planear, y es que mis compañeros no cuentan con PCs tan potentes como la mia, por lo que este include no deberia ser obligatorio para ejecutar el script, y solo habilitarse si la persona posee Ollama (o para hacerlo mas sencillo, preguntarle si tiene instalado y en caso de que lo tenga, habilitarlo). Concretamente como te digo, hacerlo para el modelo llama3.1 que es el que tengo yo. Fijate en la web porque langchain tiene wrappers para esto. 
