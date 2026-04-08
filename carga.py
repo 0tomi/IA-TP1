@@ -232,7 +232,7 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
     return CacheBackedEmbeddings.from_bytes_store(
         underlying_embeddings=base,
         document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
-        key_encoder=lambda x: hashlib.sha256(prefix + x).hexdigest(),
+        key_encoder=lambda x: hashlib.sha256(prefix + (x if isinstance(x, bytes) else x.encode())).hexdigest(),
     )
 
 
