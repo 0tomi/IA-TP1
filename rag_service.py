@@ -212,9 +212,11 @@ class RAGService:
         if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
             usage = response.usage_metadata
             if isinstance(usage, dict):
-                prompt_tokens = usage.get("prompt_token_count")
-                completion_tokens = usage.get("candidates_token_count")
-                total_tokens = usage.get("total_token_count")
+                # langchain-google-genai moderno usa input_tokens/output_tokens/total_tokens
+                # versiones anteriores usaban prompt_token_count/candidates_token_count/total_token_count
+                prompt_tokens = usage.get("input_tokens") or usage.get("prompt_token_count")
+                completion_tokens = usage.get("output_tokens") or usage.get("candidates_token_count")
+                total_tokens = usage.get("total_tokens") or usage.get("total_token_count")
             else:
                 prompt_tokens = getattr(usage, "input_tokens", None)
                 completion_tokens = getattr(usage, "output_tokens", None)
