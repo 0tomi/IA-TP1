@@ -3,11 +3,15 @@ from dotenv import load_dotenv
 import json
 import os
 import time
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR, es_error_de_rate_limit
 from saneamiento.sanear import ejecutar_saneamiento
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 DEFAULT_SYSTEM_PROMPT = (
     "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
@@ -32,6 +36,7 @@ class RAGServiceConfig:
     max_context_chunks: int = 5
     temperatura: float = 0.7
     debug: bool = False
+    llm_provider: str = "google"
     llm_model: str = "gemini-3.1-flash-lite-preview"
 
     # Parámetros de carga/embedding
@@ -93,10 +98,7 @@ class RAGService:
         self.config = config
 
         load_dotenv()
-        if not os.environ.get("GOOGLE_API_KEY"):
-            raise EnvironmentError(
-                "GOOGLE_API_KEY no se encontró en el entorno. Por favor verifica tu .env"
-            )
+        self._validar_llm_config()
 
         carga_config = config.to_carga_config()
         ejecutar_saneamiento(carga_config, refresh=config.refresh)
@@ -131,11 +133,7 @@ class RAGService:
             search_kwargs=search_kwargs,
         )
 
-        self._llm = ChatGoogleGenerativeAI(
-            model=config.llm_model,
-            temperature=config.temperatura,
-            max_retries=2,
-        )
+        self._llm = self._crear_llm()
 
         last_process_path = DATA_DIR / "last_data_process.json"
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -149,6 +147,73 @@ class RAGService:
             }, f, ensure_ascii=False, indent=2)
 
         RAGService._initialized = True
+
+    def _validar_llm_config(self):
+        if self.config.llm_provider == "google":
+            if not os.environ.get("GOOGLE_API_KEY"):
+                raise EnvironmentError(
+                    "GOOGLE_API_KEY no se encontró en el entorno. Por favor verifica tu .env"
+                )
+            return
+
+        if self.config.llm_provider == "ollama":
+            try:
+                from langchain_ollama import ChatOllama  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "Falta la dependencia opcional 'langchain-ollama'. "
+                    "Instalala antes de usar Ollama."
+                ) from exc
+
+            self._validar_ollama_local(self.config.llm_model)
+            return
+
+        raise ValueError(
+            f"Proveedor LLM inválido: '{self.config.llm_provider}'. "
+            "Usá 'google' o 'ollama'."
+        )
+
+    def _validar_ollama_local(self, model_name: str):
+        try:
+            with urlopen(f"{OLLAMA_BASE_URL}/api/tags", timeout=2) as response:
+                payload = json.load(response)
+        except URLError as exc:
+            raise EnvironmentError(
+                "No pude conectarme a Ollama en local. Verificá que esté instalado y en ejecución. "
+                "Si usás la app de Ollama, abrila; si usás CLI, corré 'ollama serve'."
+            ) from exc
+
+        model_names = {
+            model.get("name", "")
+            for model in payload.get("models", [])
+            if isinstance(model, dict)
+        }
+        if model_name not in model_names and f"{model_name}:latest" not in model_names:
+            raise EnvironmentError(
+                f"Ollama está disponible, pero no encontré el modelo '{model_name}'. "
+                f"Descargalo con 'ollama pull {model_name}'."
+            )
+
+    def _crear_llm(self):
+        if self.config.llm_provider == "google":
+            return ChatGoogleGenerativeAI(
+                model=self.config.llm_model,
+                temperature=self.config.temperatura,
+                max_retries=2,
+            )
+
+        if self.config.llm_provider == "ollama":
+            from langchain_ollama import ChatOllama
+
+            return ChatOllama(
+                model=self.config.llm_model,
+                temperature=self.config.temperatura,
+            )
+
+        raise ValueError(
+            f"Proveedor LLM inválido: '{self.config.llm_provider}'. "
+            "Usá 'google' o 'ollama'."
+        )
 
     def query(self, user_query: str) -> RAGResponse:
         max_attempts = self.config.max_retries + 1
@@ -211,7 +276,7 @@ class RAGService:
 
         response = self._llm.invoke(prompt)
 
-        # Extraer texto — content puede ser str o lista de bloques según la versión de langchain-google-genai
+        # Extraer texto — content puede ser str o lista de bloques según el wrapper.
         content = response.content
         if isinstance(content, list):
             content = next(
@@ -227,8 +292,8 @@ class RAGService:
         if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
             usage = response.usage_metadata
             if isinstance(usage, dict):
-                # langchain-google-genai moderno usa input_tokens/output_tokens/total_tokens
-                # versiones anteriores usaban prompt_token_count/candidates_token_count/total_token_count
+                # Los wrappers modernos suelen usar input_tokens/output_tokens/total_tokens.
+                # Algunos wrappers viejos usan prompt_token_count/candidates_token_count.
                 prompt_tokens = usage.get("input_tokens") or usage.get("prompt_token_count")
                 completion_tokens = usage.get("output_tokens") or usage.get("candidates_token_count")
                 total_tokens = usage.get("total_tokens") or usage.get("total_token_count")

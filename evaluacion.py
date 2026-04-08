@@ -30,6 +30,7 @@ _FIELD_TYPES: dict[str, type] = {
     "max_context_chunks": int,
     "temperatura": float,
     "debug": bool,
+    "llm_provider": str,
     "llm_model": str,
     "chunk_size": int,
     "chunk_overlap": int,

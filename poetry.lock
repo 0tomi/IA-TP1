@@ -1511,6 +1511,23 @@ langchain-core = ">=1.2.5,<2.0.0"
 pydantic = ">=2.0.0,<3.0.0"
 
 [[package]]
+name = "langchain-ollama"
+version = "1.1.0"
+description = "An integration package connecting Ollama and LangChain"
+optional = true
+python-versions = "<4.0.0,>=3.10.0"
+groups = ["main"]
+markers = "extra == \"ollama\""
+files = [
+    {file = "langchain_ollama-1.1.0-py3-none-any.whl", hash = "sha256:43ac83a6eacb0f43855810739794dd55019e0d9b17bdcf3ecb3b1991ac3b59dd"},
+    {file = "langchain_ollama-1.1.0.tar.gz", hash = "sha256:f776f56f6782ae4da7692579b94a6575906118318d1023b455d7207f9d059811"},
+]
+
+[package.dependencies]
+langchain-core = ">=1.2.21,<2.0.0"
+ollama = ">=0.6.1,<1.0.0"
+
+[[package]]
 name = "langchain-text-splitters"
 version = "1.1.1"
 description = "LangChain text splitting utilities"
@@ -2335,6 +2352,23 @@ files = [
 rsa = ["cryptography (>=3.0.0)"]
 signals = ["blinker (>=1.4.0)"]
 signedtoken = ["cryptography (>=3.0.0)", "pyjwt (>=2.0.0,<3)"]
+
+[[package]]
+name = "ollama"
+version = "0.6.1"
+description = "The official Python client for Ollama."
+optional = true
+python-versions = ">=3.8"
+groups = ["main"]
+markers = "extra == \"ollama\""
+files = [
+    {file = "ollama-0.6.1-py3-none-any.whl", hash = "sha256:fc4c984b345735c5486faeee67d8a265214a31cbb828167782dc642ce0a2bf8c"},
+    {file = "ollama-0.6.1.tar.gz", hash = "sha256:478c67546836430034b415ed64fa890fd3d1ff91781a9d548b3325274e69d7c6"},
+]
+
+[package.dependencies]
+httpx = ">=0.27"
+pydantic = ">=2.9"
 
 [[package]]
 name = "onnxruntime"
@@ -5231,7 +5265,10 @@ files = [
 [package.extras]
 cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and python_version < \"3.14\"", "cffi (>=2.0.0b0) ; platform_python_implementation != \"PyPy\" and python_version >= \"3.14\""]
 
+[extras]
+ollama = ["langchain-ollama"]
+
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.14"
-content-hash = "e025ea84fa1a77014af29bf9be699d5ac228d11a96623734f906cdef8e7884f5"
+content-hash = "f2351ce3c1eeb21f09de8dcb12673380a58572cbabf91a016d14f7d22864ac6d"
