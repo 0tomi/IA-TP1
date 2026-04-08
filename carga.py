@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import hashlib
 import json, os, re, argparse, time
 from datetime import datetime
 from pathlib import Path
@@ -227,10 +228,11 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
     else:
         base = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
 
+    prefix = config.embedding_model.encode()
     return CacheBackedEmbeddings.from_bytes_store(
         underlying_embeddings=base,
         document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
-        namespace=config.embedding_model,
+        key_encoder=lambda x: hashlib.sha256(prefix + (x if isinstance(x, bytes) else x.encode())).hexdigest(),
     )
 
 
@@ -279,10 +281,9 @@ def procesar_lote_documentos(
     archivos: list[str],
     config: CargaConfig | None = None,
 ) -> list[tuple[str, bool]]:
+    config = config or CargaConfig()
     if config.embedding_model not in LOCAL_MODELS and not os.environ.get("GOOGLE_API_KEY"):
         raise EnvironmentError("GOOGLE_API_KEY no encontrada en el entorno. Configurá el .env.")
-
-    config = config or CargaConfig()
 
     if config.chunking_technique not in CHUNKERS:
         raise ValueError(f"chunking_technique inválido: '{config.chunking_technique}'. Opciones: {list(CHUNKERS.keys())}")

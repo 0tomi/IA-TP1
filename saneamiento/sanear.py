@@ -209,9 +209,7 @@ def parsear_args() -> CargaConfig:
     return config, args.refresh
 
 
-def main():
-    config, refresh = parsear_args()
-
+def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
     if refresh:
         data_dir = ROOT / "data"
         if data_dir.exists():
@@ -288,7 +286,7 @@ def main():
 
     # === FASE 2: CARGA EN LOTE A CHROMA ===
     nuevos_archivos = [doc['source'] for doc in procesados]
-    
+
     if nuevos_archivos:
         print(f"\n[sanear] Iniciando carga en lote a ChromaDB para {len(nuevos_archivos)} archivos nuevos...")
         try:
@@ -304,6 +302,11 @@ def main():
     # Recargamos el registro final por si carga.py lo actualizó internamente
     registro = cargar_registro()
     imprimir_reporte(procesados, salteados, cargados, carga_errores)
+
+
+def main():
+    config, refresh = parsear_args()
+    ejecutar_saneamiento(config, refresh)
 
 if __name__ == "__main__":
     main()
