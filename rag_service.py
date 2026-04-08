@@ -100,7 +100,15 @@ class RAGService:
         carga_config = config.to_carga_config()
         ejecutar_saneamiento(carga_config, refresh=config.refresh)
 
-        embeddings = construir_embeddings(carga_config)
+        # El modelo ya fue descargado durante el saneamiento. Suprimimos las
+        # progress bars de huggingface_hub para que la segunda carga (desde
+        # cache local) no interfiera con el input de questionary en la consola.
+        try:
+            from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
+            disable_progress_bars()
+            embeddings = construir_embeddings(carga_config)
+        finally:
+            enable_progress_bars()
 
         self._vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
