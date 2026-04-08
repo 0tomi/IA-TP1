@@ -157,6 +157,10 @@ def formatear_tokens(r: RAGResponse) -> str:
     return f"**Tokens:** entrada: {entrada} | salida: {salida} | total: {total}"
 
 
+def _mostrar_token_count(valor: int) -> int | str:
+    return valor
+
+
 def generar_markdown(
     test_n: int,
     preguntas: list[str],
@@ -242,9 +246,9 @@ def generar_markdown(
         total_total += conv_total
         resumen_filas.append((
             idx_conv,
-            conv_entrada or "—",
-            conv_salida or "—",
-            conv_total or "—",
+            _mostrar_token_count(conv_entrada),
+            _mostrar_token_count(conv_salida),
+            _mostrar_token_count(conv_total),
         ))
 
     lineas.append("## Resumen de tokens")
@@ -254,7 +258,7 @@ def generar_markdown(
     for fila in resumen_filas:
         lineas.append(f"| {fila[0]} | {fila[1]} | {fila[2]} | {fila[3]} |")
     lineas.append(
-        f"| **Total** | **{total_entrada or '—'}** | **{total_salida or '—'}** | **{total_total or '—'}** |"
+        f"| **Total** | **{_mostrar_token_count(total_entrada)}** | **{_mostrar_token_count(total_salida)}** | **{_mostrar_token_count(total_total)}** |"
     )
     lineas.append("")
 
@@ -329,6 +333,7 @@ def main() -> None:
         resultados_conv: list[tuple[str | None, RAGResponse | None]] = []
 
         for idx_preg, pregunta in enumerate(preguntas, start=1):
+            print(f"[evaluacion] Pregunta {idx_preg}/{len(preguntas)}...")
             exito = False
             ultimo_error = None
 
