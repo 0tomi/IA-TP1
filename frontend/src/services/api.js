@@ -1,5 +1,15 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+/**
+ * Consulta el estado de inicialización del backend.
+ * Devuelve { status, phase, current_file, files_processed, total_files, message }
+ */
+export async function getStatus() {
+  const res = await fetch(`${API_BASE_URL}/api/status`);
+  if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
+  return res.json();
+}
+
 // Respuestas hardcodeadas para desarrollo
 const MOCK_RESPONSES = {
   default: "¡Buena pregunta! Estoy en proceso de conexión con el servidor. Cuando el backend esté listo, podré darte información precisa sobre las materias, horarios y todo lo relacionado con 4to año de Ingeniería en Sistemas en la UADER FCyT. 🎓",

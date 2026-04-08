@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from contextlib import asynccontextmanager
 import logging
+import threading
 
 from rag_service import RAGService, RAGServiceConfig
 
@@ -31,18 +32,54 @@ class ChatResponse(BaseModel):
     response: str
     sources: list[str]
 
+class StatusResponse(BaseModel):
+    status: str
+    phase: str = ""
+    current_file: str = ""
+    files_processed: int = 0
+    total_files: int = 0
+    message: str = ""
 
-# ── Inicialización del RAGService al arrancar ─────────────────────────────────
+
+# ── Estado de inicialización ──────────────────────────────────────────────────
 
 _rag: RAGService | None = None
+_init_lock = threading.Lock()
+_init_status: dict = {
+    "status": "loading",
+    "phase": "starting",
+    "current_file": "",
+    "files_processed": 0,
+    "total_files": 0,
+    "message": "Iniciando servicio...",
+}
+
+
+def _progress_callback(event: dict):
+    global _init_status
+    with _init_lock:
+        _init_status.update(event)
+
+
+def _init_worker():
+    global _rag, _init_status
+    try:
+        logger.info("Inicializando RAGService en background...")
+        config = RAGServiceConfig()
+        _rag = RAGService(config, progress_callback=_progress_callback)
+        with _init_lock:
+            _init_status = {"status": "ready", "phase": "ready", "message": "Servicio listo."}
+        logger.info("RAGService listo.")
+    except Exception as e:
+        logger.error("Error inicializando RAGService: %s", e, exc_info=True)
+        with _init_lock:
+            _init_status = {"status": "error", "phase": "error", "message": str(e)}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _rag
-    logger.info("Inicializando RAGService...")
-    config = RAGServiceConfig()
-    _rag = RAGService(config)
-    logger.info("RAGService listo.")
+    thread = threading.Thread(target=_init_worker, daemon=True)
+    thread.start()
     yield
 
 
@@ -50,7 +87,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Ragy — Asistente UADER FCyT",
-    description="API RAG para alumnos de 4° año de Ingeniería en Sistemas",
+    description="API RAG para alumnos de 4° año de Licenciatura en Sistemas de Información",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -74,8 +111,24 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/status", response_model=StatusResponse)
+def status():
+    with _init_lock:
+        return StatusResponse(**{
+            "status": _init_status.get("status", "loading"),
+            "phase": _init_status.get("phase", ""),
+            "current_file": _init_status.get("current_file", ""),
+            "files_processed": _init_status.get("files_processed", 0),
+            "total_files": _init_status.get("total_files", 0),
+            "message": _init_status.get("message", ""),
+        })
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="El servicio aún se está inicializando. Esperá unos segundos.")
+
     try:
         result = _rag.query(req.message)
     except Exception as e:

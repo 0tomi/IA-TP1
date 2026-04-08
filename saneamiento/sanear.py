@@ -214,7 +214,11 @@ def parsear_args() -> CargaConfig:
     return config, args.refresh
 
 
-def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
+def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_callback=None) -> None:
+    def _report(**kwargs):
+        if progress_callback:
+            progress_callback(kwargs)
+
     if refresh:
         data_dir = ROOT / "data"
         if data_dir.exists():
@@ -240,9 +244,13 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
     pdfs = sorted(CORPUS_DIR.rglob("*.pdf"))
     if not pdfs:
         print("Aviso: No hay pdfs en el corpus para procesar.")
+        _report(phase="ready", message="No hay documentos para procesar.")
         return
 
-    for pdf_path in pdfs:
+    total = len(pdfs)
+    _report(phase="saneamiento", total_files=total, files_processed=0, current_file="", message="Escaneando corpus...")
+
+    for idx, pdf_path in enumerate(pdfs):
         nombre = pdf_path.name
         sha256 = calcular_sha256(pdf_path)
 
@@ -250,9 +258,11 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
         if nombre in registro and registro[nombre].get("sha256") == sha256:
             print(f"  [cache] {nombre}")
             salteados.append(nombre)
+            _report(phase="saneamiento", total_files=total, files_processed=idx + 1, current_file=nombre, message=f"En caché: {nombre}")
             continue
 
         print(f"  [proc]  {nombre}")
+        _report(phase="saneamiento", total_files=total, files_processed=idx, current_file=nombre, message=f"Procesando: {nombre}")
 
         texto_crudo, num_paginas = extraer_texto(pdf_path)
         texto_limpio = sanear(texto_crudo)
@@ -285,6 +295,7 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
         }
 
         procesados.append(doc)
+        _report(phase="saneamiento", total_files=total, files_processed=idx + 1, current_file=nombre, message=f"Saneado: {nombre}")
 
         # Guardamos el registro por si el script falla al parsear el siguiente
         guardar_registro(registro)
@@ -294,8 +305,9 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
 
     if nuevos_archivos:
         print(f"\n[sanear] Iniciando carga en lote a ChromaDB para {len(nuevos_archivos)} archivos nuevos...")
+        _report(phase="embeddings", total_files=len(nuevos_archivos), files_processed=0, current_file="", message=f"Generando embeddings para {len(nuevos_archivos)} archivos...")
         try:
-            resultados = procesar_lote_documentos(nuevos_archivos, config=config)
+            resultados = procesar_lote_documentos(nuevos_archivos, config=config, progress_callback=progress_callback)
             for nombre, ok in resultados:
                 if ok:
                     cargados.append(nombre)

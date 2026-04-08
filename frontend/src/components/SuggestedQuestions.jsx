@@ -1,6 +1,11 @@
 import { useRotatingQuestions } from '../hooks/useRotatingQuestions';
 import QuestionIcon from './QuestionIcon';
+import predefinedQuestions from '../data/predefinedQuestions.json';
 import './SuggestedQuestions.css';
+
+const longestQuestionText = predefinedQuestions.reduce((prev, curr) => 
+  curr.text.length > prev.text.length ? curr : prev
+).text;
 
 export default function SuggestedQuestions({ onSelect }) {
   const { questions, isTransitioning } = useRotatingQuestions(3, 5000);
@@ -20,7 +25,12 @@ export default function SuggestedQuestions({ onSelect }) {
               <span className="suggested__icon">
                 <QuestionIcon name={q.icon} size={18} />
               </span>
-              <span className="suggested__text">{q.text}</span>
+              <span className="suggested__text-wrapper">
+                <span className="suggested__text-ghost" aria-hidden="true">
+                  {longestQuestionText}
+                </span>
+                <span className="suggested__text">{q.text}</span>
+              </span>
             </div>
           </button>
         ))}

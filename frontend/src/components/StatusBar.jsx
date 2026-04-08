@@ -24,7 +24,7 @@ export default function StatusBar() {
         </div>
         <div className="status-bar__center">
           <span className="status-bar__text">
-            UADER · FCyT · Ingeniería en Sistemas · TP Inteligencia Artificial
+            UADER · FCyT · Licenciatura en Sistemas de Información · TP Inteligencia Artificial
           </span>
         </div>
         <div className="status-bar__right">

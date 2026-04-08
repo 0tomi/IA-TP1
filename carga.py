@@ -335,6 +335,7 @@ def agregar_documentos_en_lotes(
 def procesar_lote_documentos(
     archivos: list[str],
     config: CargaConfig | None = None,
+    progress_callback=None,
 ) -> list[tuple[str, bool]]:
     config = config or CargaConfig()
     if config.embedding_model not in LOCAL_MODELS and not os.environ.get("GOOGLE_API_KEY"):
@@ -369,8 +370,18 @@ def procesar_lote_documentos(
     registro = cargar_registro()
     chunker = CHUNKERS[config.chunking_technique]
     resultados = []
+    total = len(archivos)
 
-    for filename in archivos:
+    for idx, filename in enumerate(archivos):
+        if progress_callback:
+            progress_callback({
+                "phase": "embeddings",
+                "total_files": total,
+                "files_processed": idx,
+                "current_file": filename,
+                "message": f"Generando embeddings: {filename}",
+            })
+
         if filename not in registro:
             print(f"[carga] ERROR: {filename} no está en el registro.")
             resultados.append((filename, False))
@@ -426,6 +437,14 @@ def procesar_lote_documentos(
             
             print(f"[carga]   -> OK: {len(chunks)} chunks ingresados a ChromaDB")
             resultados.append((filename, True))
+            if progress_callback:
+                progress_callback({
+                    "phase": "embeddings",
+                    "total_files": total,
+                    "files_processed": idx + 1,
+                    "current_file": filename,
+                    "message": f"Listo: {filename}",
+                })
 
         except Exception as e:
             print(f"[carga] ERROR procesando {filename}: {e}")

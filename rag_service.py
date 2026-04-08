@@ -102,7 +102,7 @@ class RAGService:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, config: RAGServiceConfig):
+    def __init__(self, config: RAGServiceConfig, progress_callback=None):
         if self._initialized:
             if self.config != config:
                 raise RuntimeError(
@@ -120,7 +120,10 @@ class RAGService:
             )
 
         carga_config = config.to_carga_config()
-        ejecutar_saneamiento(carga_config, refresh=config.refresh)
+        ejecutar_saneamiento(carga_config, refresh=config.refresh, progress_callback=progress_callback)
+
+        if progress_callback:
+            progress_callback({"phase": "vectorstore", "message": "Cargando modelo de embeddings..."})
 
         # El modelo ya fue descargado durante el saneamiento. Suprimimos las
         # progress bars de huggingface_hub para que la segunda carga (desde

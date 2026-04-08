@@ -1,0 +1,246 @@
+.loading-screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* ── Ambient orbs ───────────────────────────────────────────────── */
+.loading-screen__orbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.loading-screen__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+}
+
+.loading-screen__orb--1 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(56, 152, 236, 0.1) 0%, transparent 70%);
+  top: -150px;
+  right: -100px;
+  animation: lsOrbFloat 20s ease-in-out infinite;
+}
+
+.loading-screen__orb--2 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.07) 0%, transparent 70%);
+  bottom: -100px;
+  left: -50px;
+  animation: lsOrbFloat 25s ease-in-out infinite reverse;
+}
+
+@keyframes lsOrbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, -30px) scale(1.1); }
+}
+
+/* ── Card ───────────────────────────────────────────────────────── */
+.loading-screen__card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem 3rem;
+  background: rgba(15, 22, 36, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--glow-strong);
+  max-width: 440px;
+  width: 90%;
+  animation: lsCardIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes lsCardIn {
+  from { opacity: 0; transform: translateY(30px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Animated ring ──────────────────────────────────────────────── */
+.loading-screen__ring-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+}
+
+.loading-screen__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2.5px solid var(--border-subtle);
+  border-top-color: var(--accent-primary);
+  animation: lsRingSpin 1.2s linear infinite;
+}
+
+.loading-screen__ring-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes lsRingSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Title ──────────────────────────────────────────────────────── */
+.loading-screen__title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin: 0;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.loading-screen__subtitle {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  margin: -0.5rem 0 0;
+}
+
+/* ── Phase badge ────────────────────────────────────────────────── */
+.loading-screen__phase {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+  border: 1px solid;
+  border-radius: 100px;
+  padding: 0.25rem 0.75rem;
+}
+
+.loading-screen__phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: lsPulseDot 1.5s ease-in-out infinite;
+}
+
+@keyframes lsPulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ── Progress bar ───────────────────────────────────────────────── */
+.loading-screen__progress-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.loading-screen__progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(56, 152, 236, 0.1);
+  border-radius: 100px;
+  overflow: hidden;
+}
+
+.loading-screen__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: 100px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 12px rgba(56, 152, 236, 0.4);
+}
+
+.loading-screen__progress-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Current file ───────────────────────────────────────────────── */
+.loading-screen__file {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--accent-primary);
+  background: var(--accent-dim);
+  border: 1px solid rgba(56, 152, 236, 0.15);
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  max-width: 100%;
+  animation: lsFileIn 0.3s ease-out;
+}
+
+.loading-screen__file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes lsFileIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Message ────────────────────────────────────────────────────── */
+.loading-screen__message {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0;
+  min-height: 1.2em;
+}
+
+/* ── Animated dots ──────────────────────────────────────────────── */
+.loading-screen__dots {
+  display: flex;
+  gap: 6px;
+  margin-top: 0.25rem;
+}
+
+.loading-screen__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  opacity: 0.3;
+  animation: lsDotBounce 1.4s ease-in-out infinite;
+}
+
+.loading-screen__dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-screen__dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes lsDotBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+/* ── Footer ─────────────────────────────────────────────────────── */
+.loading-screen__footer {
+  position: absolute;
+  bottom: 1rem;
+  z-index: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
