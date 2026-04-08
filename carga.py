@@ -101,6 +101,29 @@ def es_titulo(linea: str) -> bool:
     return bool(re.match(patron, linea))
 
 
+def detectar_titulos_en_pagina(page_text: str, current_title: str) -> tuple[list[tuple[int, str]], str]:
+    offsets = [(0, current_title)]
+    cursor = 0
+
+    for line in page_text.splitlines(keepends=True):
+        line_sin_nl = line.rstrip("\n")
+        if es_titulo(line_sin_nl):
+            current_title = line_sin_nl.strip()
+            offsets.append((cursor, current_title))
+        cursor += len(line)
+
+    return offsets, current_title
+
+
+def obtener_titulo_por_offset(offsets: list[tuple[int, str]], chunk_start: int) -> str:
+    titulo = offsets[0][1]
+    for offset, current_title in offsets:
+        if offset > chunk_start:
+            break
+        titulo = current_title
+    return titulo
+
+
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
@@ -110,6 +133,7 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
 
     documents = []
     chunk_idx = 0
+
     current_title = "Intro / Sin título"  # persiste entre páginas
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
@@ -151,15 +175,33 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     )
     documents = []
     chunk_idx = 0
+    current_title = "Intro / Sin título"
+
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
+
+        offsets, current_title = detectar_titulos_en_pagina(page_text, current_title)
+        search_from = 0
+
         for chunk in splitter.split_text(page_text):
+            chunk_start = page_text.find(chunk, search_from)
+            if chunk_start == -1:
+                chunk_start = page_text.find(chunk)
+            if chunk_start == -1:
+                chunk_start = search_from
+
             documents.append(Document(
                 page_content=chunk,
-                metadata={**base_metadata, "seccion": "", "pagina": page_num, "chunk_index": chunk_idx},
+                metadata={
+                    **base_metadata,
+                    "seccion": obtener_titulo_por_offset(offsets, chunk_start),
+                    "pagina": page_num,
+                    "chunk_index": chunk_idx,
+                },
             ))
             chunk_idx += 1
+            search_from = max(chunk_start + max(len(chunk) - config.chunk_overlap, 1), 0)
     return documents
 
 
