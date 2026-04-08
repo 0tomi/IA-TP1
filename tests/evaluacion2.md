@@ -26,35 +26,6 @@
 - ¿Cómo se resuelve un modelo de Programación Lineal usando el método de Simplex en Excel?
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
-[Parametros 1]
-# Baseline: Temp 0.5, Prompt default, Chunks 512
-llm_provider = google
-llm_model = gemini-3.1-flash-lite-preview
-embedding_model = BAAI/bge-m3
-temperatura = 0.5
-chunk_size = 512
-chunk_overlap = 50
-chunking_technique = recursive
-retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
-refresh = true
-
-[Parametros 2]
-# Subimos temperatura a 1.0 (Sin tocar nada más)
-temperatura = 1.0
-
-[Parametros 3]
-# Temperatura 1.5 y Chunks grandes (1000/200) para contexto más amplio
-temperatura = 1.5
-chunk_size = 1000
-chunk_overlap = 200
-refresh = true
-
-[Parametros 4]
-# Temperatura 2.0 (Caos controlado con prompt restrictivo por defecto)
-temperatura = 2.0
-
 [Parametros 5]
 # TEST: System Prompt ABIERTO + Temperatura 1.0 + Chunks fragmentados (300/30)
 # Queremos ver si el modelo "rellena" los huecos del chunking malo con su conocimiento

@@ -55,31 +55,5 @@ refresh = true
 # Temperatura 2.0 (Caos controlado con prompt restrictivo por defecto)
 temperatura = 2.0
 
-[Parametros 5]
-# TEST: System Prompt ABIERTO + Temperatura 1.0 + Chunks fragmentados (300/30)
-# Queremos ver si el modelo "rellena" los huecos del chunking malo con su conocimiento
-temperatura = 1.0
-system_prompt = Sos un asistente académico experto. Usá el contexto proporcionado: {contexto}. Si la información es escasa, completá con tu conocimiento general de ingeniería pero aclaralo. Pregunta: {pregunta}
-chunk_size = 300
-chunk_overlap = 30
-chunking_technique = fixed_size_overlap
-refresh = true
 
-[Parametros 6]
-# Mismo prompt abierto pero con MMR para ver si la diversidad de fuentes ayuda
-retrieval_type = mmr
-top_k = 8
 
-[Parametros 7]
-# Subimos a 1.5 con el prompt abierto
-temperatura = 1.5
-
-[Parametros 8]
-# TEST: System Prompt EXTREMADAMENTE CERRADO + Temperatura 2.0
-# Buscamos ver si un prompt muy rígido puede contener el delirio de una temperatura tan alta
-temperatura = 2.0
-system_prompt = SOS UN ROBOT DE EXTRACCIÓN. PROHIBIDO AGREGAR COMENTARIOS. Si la respuesta no está LITERAL en el contexto, respondé: 'DATO NO ENCONTRADO'. No uses tu conocimiento previo. Contexto: {contexto}. Pregunta: {pregunta}
-chunk_size = 600
-chunk_overlap = 100
-chunking_technique = recursive
-refresh = true
