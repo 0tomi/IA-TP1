@@ -2,8 +2,9 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import json
 import os
+import time
 
-from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR
+from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR, es_error_de_rate_limit
 from saneamiento.sanear import ejecutar_saneamiento
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -150,6 +151,20 @@ class RAGService:
         RAGService._initialized = True
 
     def query(self, user_query: str) -> RAGResponse:
+        max_attempts = self.config.max_retries + 1
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self._ejecutar_query(user_query)
+            except Exception as e:
+                if not es_error_de_rate_limit(e) or attempt >= max_attempts:
+                    raise
+                print(
+                    f"[rag] Rate limit en query (intento {attempt}/{max_attempts}), "
+                    f"esperando {self.config.retry_wait_seconds}s..."
+                )
+                time.sleep(self.config.retry_wait_seconds)
+
+    def _ejecutar_query(self, user_query: str) -> RAGResponse:
         docs = self._retriever.invoke(user_query)
 
         chunks_found = len(docs)
