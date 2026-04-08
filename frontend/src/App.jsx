@@ -88,7 +88,7 @@ export default function App() {
         {/* Zona de chat: mensajes + input apilados, scroll interno */}
         {hasMessages ? (
           <div className="app__chat-area">
-            <ChatMessages messages={messages} />
+            <ChatMessages messages={messages} isLoading={isLoading} />
             <div className="app__input-area">
               <ChatInput onSend={handleSend} isLoading={isLoading} />
             </div>

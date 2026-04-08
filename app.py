@@ -82,13 +82,17 @@ def chat(req: ChatRequest):
         logger.error("Error en RAGService.query: %s", e, exc_info=True)
         raise HTTPException(status_code=503, detail="El servicio de IA no está disponible en este momento.")
 
-    # Deduplicar fuentes manteniendo orden
+    # Deduplicar fuentes realmente usadas por el LLM
     seen: set[str] = set()
     sources: list[str] = []
-    for chunk in result.chunk_details:
+    for chunk in result.sources_used:
         src = chunk.get("source", "")
-        if src and src != "Oculto" and src not in seen:
-            seen.add(src)
-            sources.append(src)
+        pag = chunk.get("pagina")
+        if src and src != "Oculto":
+            pag_str = str(pag) if pag is not None and str(pag) != "—" else ""
+            src_str = f"{src} (Pág. {pag_str})" if pag_str else src
+            if src_str not in seen:
+                seen.add(src_str)
+                sources.append(src_str)
 
     return ChatResponse(response=result.answer, sources=sources)

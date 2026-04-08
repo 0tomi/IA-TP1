@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import json
 import os
+import re
 
 from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR
 from saneamiento.sanear import ejecutar_saneamiento
@@ -11,15 +12,24 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 DEFAULT_SYSTEM_PROMPT = (
     "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
     "ÚNICAMENTE en la información proporcionada en el Contexto a continuación.\n"
-    "Si no puedes responder la pregunta del usuario utilizando exclusivamente la "
-    'información del Contexto, debes indicar claramente "No dispongo de información '
-    'en mis documentos para responder esta consulta." NO inventes respuestas, ni uses '
-    "conocimientos externos bajo ninguna circunstancia.\n\n"
+    "ADVERTENCIA: El contexto puede contener fragmentos de diferentes materias ("
+    "esto ocurre por la búsqueda de similitud matemática). Debes IGNORAR los documentos "
+    "que NO correspondan a la asignatura o intención evidente del usuario.\n"
+    "Si no puedes responder la pregunta utilizando exclusivamente la información "
+    'relevante del Contexto, indica claramente: "No dispongo de información '
+    'en mis documentos para responder esta consulta." NO inventes.\n\n'
+    "IMPORTANTE: Al final de tu respuesta, en una línea aparte, indicá los índices "
+    "de los documentos del contexto que REALMENTE usaste para elaborar tu respuesta, "
+    "usando EXACTAMENTE este formato:\n"
+    "<<FUENTES: 0, 2, 3>>\n"
+    "Si no usaste ningún documento, escribí: <<FUENTES: >>\n\n"
     "### CONTEXTO ###\n"
     "{contexto}\n\n"
     "### PREGUNTA DEL USUARIO ###\n"
     "{pregunta}\n"
 )
+
+_FUENTES_PATTERN = re.compile(r"<<FUENTES:\s*([\d,\s]*)>>")
 
 
 @dataclass
@@ -66,9 +76,21 @@ class RAGResponse:
     chunks_found: int
     chunks_used: int
     chunk_details: list[dict]
+    sources_used: list[dict]
     prompt_tokens: int | None
     completion_tokens: int | None
     total_tokens: int | None
+
+
+def _parse_cited_sources(text: str) -> tuple[str, list[int] | None]:
+    """Extract cited document indices from the LLM response and return clean text."""
+    match = _FUENTES_PATTERN.search(text)
+    if not match:
+        return text, None
+    indices_str = match.group(1).strip()
+    indices = [int(x.strip()) for x in indices_str.split(",") if x.strip().isdigit()] if indices_str else []
+    clean = text[: match.start()].rstrip()
+    return clean, indices
 
 
 class RAGService:
@@ -174,17 +196,19 @@ class RAGService:
                 chunks_found=chunks_found,
                 chunks_used=0,
                 chunk_details=[],
+                sources_used=[],
                 prompt_tokens=None,
                 completion_tokens=None,
                 total_tokens=None,
             )
 
         bloques_texto = []
-        for d in docs_contexto:
+        for i, d in enumerate(docs_contexto):
             meta = d.metadata
             bloques_texto.append(
-                f"Documento: {meta.get('documento', '?')}\n"
+                f"[Documento {i}]: {meta.get('documento', '?')}\n"
                 f"Sección: {meta.get('seccion', '?')}\n"
+                f"Página: {meta.get('pagina', '?')}\n"
                 f"Contenido:\n{d.page_content}"
             )
         contexto_str = "\n\n---\n\n".join(bloques_texto)
@@ -203,6 +227,15 @@ class RAGService:
                 (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
                 "",
             )
+
+        # Parsear índices de fuentes citadas por el LLM y limpiar el texto
+        clean_answer, cited_indices = _parse_cited_sources(content)
+        if cited_indices is not None:
+            valid_indices = set(cited_indices) & {d["index"] for d in chunk_details}
+            sources_used = [d for d in chunk_details if d["index"] in valid_indices]
+        else:
+            # Fallback: si el LLM no incluyó la marca, devolver todas
+            sources_used = chunk_details
 
         # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
         prompt_tokens = None
@@ -223,10 +256,11 @@ class RAGService:
                 total_tokens = getattr(usage, "total_tokens", None)
 
         return RAGResponse(
-            answer=content,
+            answer=clean_answer,
             chunks_found=chunks_found,
             chunks_used=chunks_used,
             chunk_details=chunk_details,
+            sources_used=sources_used,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
