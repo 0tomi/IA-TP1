@@ -61,10 +61,12 @@ def _mark_default(choices, default_value):
 
 
 def _select(pregunta, choices, default):
+    marked = _mark_default(choices, default)
+    default_choice = next((c for c in marked if c.value == default), None)
     return questionary.select(
         pregunta,
-        choices=_mark_default(choices, default),
-        default=next((c for c in _mark_default(choices, default) if c.value == default), None),
+        choices=marked,
+        default=default_choice,
         style=STYLE,
         instruction="(↑↓ para mover, Enter para confirmar, Ctrl+C para volver)",
     ).ask()
