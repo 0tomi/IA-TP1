@@ -119,7 +119,9 @@ def sanear(texto: str) -> str:
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    return texto.strip()
+    # Recortamos por página para no perder separadores \f en bordes del documento.
+    paginas = [pagina.strip() for pagina in texto.split("\f")]
+    return "\f".join(paginas)
 
 def escapar_toon(text: str) -> str:
     # Helper para que no rompa el formato toon
