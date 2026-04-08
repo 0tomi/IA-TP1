@@ -2,6 +2,10 @@ import argparse
 import json
 import sys
 
+GREEN = "\033[92m"
+RESET = "\033[0m"
+_DEBUG_W = 72  # ancho interior del cuadro de debug
+
 import questionary
 from questionary import Style
 
@@ -268,6 +272,32 @@ def pedir_configuracion() -> RAGServiceConfig:
     return RAGServiceConfig(**kwargs)
 
 
+# ── Debug block ────────────────────────────────────────────────────────────────
+
+def _print_debug(response):
+    W = _DEBUG_W
+
+    def row(text):
+        if len(text) > W - 2:
+            text = text[: W - 3] + "…"
+        print(f"  ║ {text:<{W - 2}}║")
+
+    header = f" DEBUG · {response.chunks_used} chunks usados de {response.chunks_found} encontrados "
+    print(f"\n  ╔{'═' * W}╗")
+    print(f"  ║{header:^{W}}║")
+    print(f"  ╠{'═' * W}╣")
+    for i, detail in enumerate(response.chunk_details):
+        row(f"[{detail['index']}] Documento : {detail['source']}")
+        row(f"    Materia   : {detail.get('materia', '—')}")
+        row(f"    Página    : {detail.get('pagina', '—')}")
+        row(f"    Sección   : {detail['section']}")
+        preview = detail["preview"].strip().replace("\n", " ")
+        row(f"    Preview   : {preview}")
+        if i < len(response.chunk_details) - 1:
+            print(f"  ╠{'─' * W}╣")
+    print(f"  ╚{'═' * W}╝")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -305,14 +335,9 @@ def main():
             response = service.query(user_input.strip())
 
             if config.debug:
-                print(f"\n  ┌─ DEBUG: {response.chunks_used} chunks usados de {response.chunks_found} encontrados")
-                for detail in response.chunk_details:
-                    print(f"  ├─ [{detail['index']}] {detail['source']}")
-                    print(f"  │   Sección : {detail['section']}")
-                    print(f"  │   Preview : {detail['preview'].strip()[:120]}...")
-                print(f"  └{'─' * 50}\n")
+                _print_debug(response)
 
-            print(f"\n  Agente › {response.answer}\n")
+            print(f"\n  {GREEN}RAGi ›{RESET} {response.answer}\n")
 
             if response.prompt_tokens is not None:
                 print(

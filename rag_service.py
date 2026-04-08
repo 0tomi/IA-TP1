@@ -136,8 +136,10 @@ class RAGService:
             {
                 "index": i,
                 "source": doc.metadata.get("documento", "Oculto"),
-                "section": doc.metadata.get("seccion", "Sin seccion"),
-                "preview": doc.page_content[:150],
+                "materia": doc.metadata.get("materia", "—"),
+                "section": doc.metadata.get("seccion", "Sin sección"),
+                "pagina": doc.metadata.get("pagina", "—"),
+                "preview": doc.page_content[:200],
             }
             for i, doc in enumerate(docs_contexto)
         ]
