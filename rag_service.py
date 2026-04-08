@@ -325,6 +325,15 @@ class RAGService:
                     client = instance._vectorstore._client
                     if hasattr(client, "_system"):
                         client._system.stop()
+                    # Limpiar el SharedSystemClient interno de ChromaDB. Sin esto,
+                    # la proxima llamada a Chroma(persist_directory=...) intenta
+                    # reusar el sistema parado y falla con "Could not connect to
+                    # tenant default_tenant" al hacer refresh consecutivos.
+                    import chromadb.api.client as _chroma_client
+                    if hasattr(_chroma_client, "SharedSystemClient"):
+                        id_map = getattr(_chroma_client.SharedSystemClient, "_identifier_to_system", None)
+                        if id_map is not None:
+                            id_map.clear()
                 except Exception:
                     pass
             for attr in ("_vectorstore", "_retriever", "_llm"):
