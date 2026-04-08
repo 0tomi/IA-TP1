@@ -20,6 +20,8 @@ EMBEDDINGS_CACHE_DIR = DATA_DIR / "embeddings_cache"
 
 LOCAL_MODELS = {
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {},
+    "sentence-transformers/all-MiniLM-L6-v2": {},
+    "intfloat/multilingual-e5-small": {},
     "BAAI/bge-m3": {
         "model_kwargs": {"torch_dtype": "float16"},
         "encode_kwargs": {"normalize_embeddings": True},
