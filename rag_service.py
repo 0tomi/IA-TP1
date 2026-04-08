@@ -8,6 +8,19 @@ from saneamiento.sanear import ejecutar_saneamiento
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+DEFAULT_SYSTEM_PROMPT = (
+    "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
+    "ÚNICAMENTE en la información proporcionada en el Contexto a continuación.\n"
+    "Si no puedes responder la pregunta del usuario utilizando exclusivamente la "
+    'información del Contexto, debes indicar claramente "No dispongo de información '
+    'en mis documentos para responder esta consulta." NO inventes respuestas, ni uses '
+    "conocimientos externos bajo ninguna circunstancia.\n\n"
+    "### CONTEXTO ###\n"
+    "{contexto}\n\n"
+    "### PREGUNTA DEL USUARIO ###\n"
+    "{pregunta}\n"
+)
+
 
 @dataclass
 class RAGServiceConfig:
@@ -31,6 +44,9 @@ class RAGServiceConfig:
 
     # Control de saneamiento
     refresh: bool = False
+
+    # Prompt del sistema (editable por el usuario)
+    system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
 
     def to_carga_config(self) -> CargaConfig:
         return CargaConfig(
@@ -165,15 +181,10 @@ class RAGService:
             )
         contexto_str = "\n\n---\n\n".join(bloques_texto)
 
-        prompt = f"""Eres un asistente diseñado estrictamente para responder a preguntas basándote ÚNICAMENTE en la información proporcionada en el Contexto a continuación.
-Si no puedes responder la pregunta del usuario utilizando exclusivamente la información del Contexto, debes indicar claramente "No dispongo de información en mis documentos para responder esta consulta." NO inventes respuestas, ni uses conocimientos externos bajo ninguna circunstancia.
-
-### CONTEXTO ###
-{contexto_str}
-
-### PREGUNTA DEL USUARIO ###
-{user_query}
-"""
+        prompt = self.config.system_prompt.format(
+            contexto=contexto_str,
+            pregunta=user_query,
+        )
 
         response = self._llm.invoke(prompt)
 
