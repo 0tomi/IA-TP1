@@ -1,9 +1,11 @@
 import argparse
+import json
 import sys
 
 import questionary
 from questionary import Style
 
+from carga import DATA_DIR
 from rag_service import RAGService, RAGServiceConfig
 
 # ── Modelos disponibles ────────────────────────────────────────────────────────
@@ -114,8 +116,26 @@ def _confirm(pregunta, default):
 
 # ── Wizard ─────────────────────────────────────────────────────────────────────
 
+def _cargar_last_config() -> dict:
+    path = DATA_DIR / "last_data_process.json"
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
 def pedir_configuracion() -> RAGServiceConfig:
     defaults = RAGServiceConfig()
+    last = _cargar_last_config()
+    if last:
+        defaults.embedding_model = last.get("embedding_model", defaults.embedding_model)
+        defaults.chunk_size = last.get("chunk_size", defaults.chunk_size)
+        defaults.chunk_overlap = last.get("chunk_overlap", defaults.chunk_overlap)
+        defaults.chunking_technique = last.get("chunking_technique", defaults.chunking_technique)
+        defaults.embedding_batch_size = last.get("embedding_batch_size", defaults.embedding_batch_size)
 
     print()
     modo = _select(

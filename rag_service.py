@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+import json
 import os
 
 from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR
@@ -110,6 +111,17 @@ class RAGService:
             temperature=config.temperatura,
             max_retries=2,
         )
+
+        last_process_path = DATA_DIR / "last_data_process.json"
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(last_process_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "embedding_model": config.embedding_model,
+                "chunk_size": config.chunk_size,
+                "chunk_overlap": config.chunk_overlap,
+                "chunking_technique": config.chunking_technique,
+                "embedding_batch_size": config.embedding_batch_size,
+            }, f, ensure_ascii=False, indent=2)
 
         RAGService._initialized = True
 
