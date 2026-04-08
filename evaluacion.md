@@ -28,23 +28,19 @@
 ¿Qué materias abordan explícitamente competencias relacionadas con el trabajo en equipo o habilidades blandas?
 
 [Parametros 1]
+llm_provider = ollama
+llm_model = llama3.1
+embedding_model = BAAI/bge-m3
+chunk_size = 1024
+chunking_technique = fixed_size_overlap
 retrieval_type = similarity_search
 top_k = 5
-chunk_size = 512
-chunk_overlap = 50
-chunking_technique = recursive
-llm_model = gemini-3.1-flash-lite-preview
-temperatura = 0.3
+max_context_chunks = 5
 refresh = true
 
 [Parametros 2]
 retrieval_type = mmr
-top_k = 8
-temperatura = 0.3
 
 [Parametros 3]
-retrieval_type = similarity_search
-top_k = 5
-chunk_size = 256
-chunk_overlap = 30
-refresh = true
+retrieval_type = threshold
+threshold = 0.5
