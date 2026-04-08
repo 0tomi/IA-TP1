@@ -321,12 +321,29 @@ def main() -> None:
 
         print(f"\n[evaluacion] Conversacion {idx_conv} iniciada")
 
-        RAGService.reset()
-        try:
-            service = RAGService(config)
-        except Exception as e:
-            print(f"[evaluacion] Error al inicializar RAGService para conversacion {idx_conv}: {e}")
-            todos_resultados.append([(str(e), None)] * len(preguntas))
+        service = None
+        init_error = None
+        for intento in range(1, args.retry + 1):
+            RAGService.reset()
+            try:
+                service = RAGService(config)
+                init_error = None
+                break
+            except Exception as e:
+                init_error = e
+                if intento < args.retry:
+                    print(
+                        f"[evaluacion] Error al inicializar conversacion {idx_conv} "
+                        f"(intento {intento}/{args.retry}): {e}"
+                    )
+                else:
+                    print(
+                        f"[evaluacion] Error al inicializar conversacion {idx_conv} "
+                        f"tras {args.retry} intento(s): {e}"
+                    )
+
+        if init_error is not None:
+            todos_resultados.append([(str(init_error), None)] * len(preguntas))
             print(f"[evaluacion] Conversacion {idx_conv} finalizada con error de inicializacion.")
             continue
 
