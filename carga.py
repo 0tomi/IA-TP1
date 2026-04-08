@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import hashlib
 import json, os, re, argparse, time
 from datetime import datetime
 from pathlib import Path
@@ -227,7 +228,6 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
     else:
         base = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
 
-    import hashlib
     prefix = config.embedding_model.encode()
     return CacheBackedEmbeddings.from_bytes_store(
         underlying_embeddings=base,

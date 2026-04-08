@@ -65,6 +65,11 @@ class RAGService:
 
     def __init__(self, config: RAGServiceConfig):
         if self._initialized:
+            if self.config != config:
+                raise RuntimeError(
+                    "RAGService ya está inicializado con una configuración distinta. "
+                    "Llamá RAGService.reset() antes de crear una nueva instancia."
+                )
             return
 
         self.config = config
@@ -75,9 +80,9 @@ class RAGService:
                 "GOOGLE_API_KEY no se encontró en el entorno. Por favor verifica tu .env"
             )
 
-        ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh)
-
         carga_config = config.to_carga_config()
+        ejecutar_saneamiento(carga_config, refresh=config.refresh)
+
         embeddings = construir_embeddings(carga_config)
 
         self._vectorstore = Chroma(
