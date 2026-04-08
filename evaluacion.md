@@ -8,6 +8,8 @@
 ¿Cuántos estudiantes están inscriptos en Investigación Operativa este año?
 ¿Qué software de simulación se usa obligatoriamente en el laboratorio de Redes?
 ¿Cuál fue la última reforma curricular del plan de estudios de Informática y RRHH?
+¿Qué temas entran en el parcial de Investigación Operativa del 15 de junio?
+¿Para qué sirve el software TORA y qué módulos incluye según la cátedra?
 
 # --- Preguntas comunes (tópico único: Inteligencia Artificial) ---
 
@@ -17,6 +19,8 @@
 ¿Qué métodos o estrategias de búsqueda se estudian en la materia de IA?
 ¿Qué contenidos de aprendizaje automático o machine learning se incluyen en el programa de IA?
 ¿Cuáles son los criterios de evaluación o modalidades de trabajo práctico en IA?
+Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
+¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
 
 # --- Preguntas de integración (múltiples tópicos) ---
 
@@ -26,6 +30,9 @@
 ¿Cómo se complementan los contenidos de Bases de Datos Avanzadas e Investigación Operativa para el análisis de información?
 ¿Qué similitudes existen entre los enfoques de evaluación de Inteligencia Artificial y los de Comunicación y Redes?
 ¿Qué materias abordan explícitamente competencias relacionadas con el trabajo en equipo o habilidades blandas?
+¿Cómo se resuelve un modelo de Programación Lineal usando el método de Simplex en Excel?
+¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
+
 
 [Parametros 1]
 llm_provider = ollama
