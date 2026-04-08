@@ -227,11 +227,12 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
     else:
         base = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
 
+    import hashlib
+    prefix = config.embedding_model.encode()
     return CacheBackedEmbeddings.from_bytes_store(
         underlying_embeddings=base,
         document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
-        namespace=config.embedding_model,
-        key_encoder=lambda x: __import__("hashlib").sha256(x).hexdigest(),
+        key_encoder=lambda x: hashlib.sha256(prefix + x).hexdigest(),
     )
 
 
