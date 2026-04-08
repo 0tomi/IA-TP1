@@ -279,10 +279,9 @@ def procesar_lote_documentos(
     archivos: list[str],
     config: CargaConfig | None = None,
 ) -> list[tuple[str, bool]]:
+    config = config or CargaConfig()
     if config.embedding_model not in LOCAL_MODELS and not os.environ.get("GOOGLE_API_KEY"):
         raise EnvironmentError("GOOGLE_API_KEY no encontrada en el entorno. Configurá el .env.")
-
-    config = config or CargaConfig()
 
     if config.chunking_technique not in CHUNKERS:
         raise ValueError(f"chunking_technique inválido: '{config.chunking_technique}'. Opciones: {list(CHUNKERS.keys())}")
