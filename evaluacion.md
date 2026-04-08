@@ -31,7 +31,8 @@
 llm_provider = ollama
 llm_model = llama3.1
 embedding_model = BAAI/bge-m3
-chunk_size = 1024
+chunk_size = 800
+chunk_overlap = 200
 chunking_technique = fixed_size_overlap
 retrieval_type = similarity_search
 top_k = 5
@@ -42,5 +43,39 @@ refresh = true
 retrieval_type = mmr
 
 [Parametros 3]
+retrieval_type = threshold
+threshold = 0.7
+
+[Parametros 4]
+retrieval_type = threshold
+threshold = 0.5
+
+[Parametros 5]
+chunk_size = 1024
+chunking_technique = recursive
+retrieval_type = similarity_search
+top_k = 7
+max_context_chunks = 5
+refresh = true
+
+[Parametros 6]
+retrieval_type = mmr
+
+[Parametros 7]
+retrieval_type = threshold
+threshold = 0.5
+
+[Parametros 8]
+chunk_size = 1024
+chunking_technique = paragraph_custom
+retrieval_type = similarity_search
+top_k = 7
+max_context_chunks = 5
+refresh = true
+
+[Parametros 9]
+retrieval_type = mmr
+
+[Parametros 10]
 retrieval_type = threshold
 threshold = 0.5
