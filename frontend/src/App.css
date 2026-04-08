@@ -1,0 +1,216 @@
+.app {
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ambient glow orbs */
+.app__orbs {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.app__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+}
+
+.app__orb--1 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(56, 152, 236, 0.08) 0%, transparent 70%);
+  top: -200px;
+  right: -150px;
+  animation: orbFloat1 22s ease-in-out infinite;
+}
+
+.app__orb--2 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(27, 79, 114, 0.06) 0%, transparent 70%);
+  bottom: -150px;
+  left: -100px;
+  animation: orbFloat2 28s ease-in-out infinite;
+}
+
+.app__orb--3 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.05) 0%, transparent 70%);
+  top: 45%;
+  left: 60%;
+  animation: orbFloat3 18s ease-in-out infinite;
+}
+
+@keyframes orbFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-60px, 40px) scale(1.1); }
+  66% { transform: translate(20px, -30px) scale(0.95); }
+}
+
+@keyframes orbFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(50px, -40px) scale(1.05); }
+}
+
+@keyframes orbFloat3 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-30px, 25px); }
+}
+
+/* ─── Layout principal ─────────────────────────────────── */
+
+/*
+  El main ocupa TODO el espacio entre header y status-bar.
+  Cuando NO hay mensajes: centra el hero verticalmente.
+  Cuando HAY mensajes: columna flex con los mensajes
+  creciendo (flex:1) y el input fijo abajo.
+*/
+.app__main {
+  flex: 1;
+  min-height: 0;          /* crucial para que flex hijos puedan shrink */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4.5rem 1.5rem 1.25rem; /* top = altura header */
+  position: relative;
+  z-index: 1;
+}
+
+.app__main--chatting {
+  justify-content: flex-start;
+  padding-top: 4.5rem;
+  padding-bottom: 0;
+}
+
+/* ─── Hero ─────────────────────────────────────────────── */
+.app__hero {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  flex-shrink: 0;
+}
+
+.app__hero--compact {
+  margin-bottom: 0.75rem;
+}
+
+.app__title {
+  font-size: 2.75rem;
+  font-weight: 800;
+  margin: 0 0 0.75rem;
+  letter-spacing: -1px;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.app__title::after {
+  content: '';
+  display: block;
+  width: 60px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent-primary), transparent);
+  margin: 1rem auto 0;
+  border-radius: 2px;
+}
+
+.app__hero--compact .app__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.app__hero--compact .app__title::after {
+  display: none;
+}
+
+.app__title-name {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.app__description {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 1.25rem 0 0;
+}
+
+.app__description strong {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.app__desc-detail {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.app__tag-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.app__tag {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.app__tag--accent {
+  color: var(--accent-primary);
+  background: var(--accent-dim);
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 152, 236, 0.15);
+}
+
+.app__tag-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* ─── Área de chat (mensajes + input) ──────────────────── */
+.app__chat-area {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Input area ────────────────────────────────────────── */
+.app__input-area {
+  width: 100%;
+  max-width: 720px;
+  flex-shrink: 0;
+  padding-bottom: 1.25rem;
+  position: relative;
+  z-index: 2;
+}
+
+/* Cuando no hay mensajes el input no tiene wrapper de chat */
+.app__main:not(.app__main--chatting) .app__input-area {
+  max-width: 100%;
+}

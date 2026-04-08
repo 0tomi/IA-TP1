@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "text": "¿Cuáles son las materias de 4to año de Ingeniería en Sistemas?",
+    "icon": "BookOpen"
+  },
+  {
+    "id": 2,
+    "text": "¿Qué horarios tienen las materias este cuatrimestre?",
+    "icon": "Clock"
+  },
+  {
+    "id": 3,
+    "text": "¿Cuáles son las correlatividades de las materias de 4to año?",
+    "icon": "GitBranch"
+  },
+  {
+    "id": 4,
+    "text": "¿Dónde puedo encontrar el plan de estudios actualizado?",
+    "icon": "FileText"
+  },
+  {
+    "id": 5,
+    "text": "¿Cuáles son los requisitos para regularizar Inteligencia Artificial?",
+    "icon": "BrainCircuit"
+  },
+  {
+    "id": 6,
+    "text": "¿Qué profesores dictan las materias de 4to año?",
+    "icon": "Users"
+  },
+  {
+    "id": 7,
+    "text": "¿Cuáles son las fechas de exámenes finales?",
+    "icon": "CalendarDays"
+  },
+  {
+    "id": 8,
+    "text": "¿Qué proyectos finales se realizaron en años anteriores?",
+    "icon": "Lightbulb"
+  },
+  {
+    "id": 9,
+    "text": "¿Cómo me inscribo a las materias del próximo cuatrimestre?",
+    "icon": "ClipboardEdit"
+  },
+  {
+    "id": 10,
+    "text": "¿Qué recursos de la biblioteca puedo utilizar para estudiar?",
+    "icon": "Library"
+  },
+  {
+    "id": 11,
+    "text": "¿Cuál es el régimen de asistencia de la facultad?",
+    "icon": "ListChecks"
+  },
+  {
+    "id": 12,
+    "text": "¿Cómo funciona el sistema de becas de la UADER?",
+    "icon": "GraduationCap"
+  }
+]

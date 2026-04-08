@@ -1,0 +1,108 @@
+import { useState, useCallback } from 'react';
+import Header from './components/Header';
+import HeroIcon from './components/HeroIcon';
+import ChatInput from './components/ChatInput';
+import ChatMessages from './components/ChatMessages';
+import SuggestedQuestions from './components/SuggestedQuestions';
+import GridBackground from './components/GridBackground';
+import StatusBar from './components/StatusBar';
+import { sendMessage } from './services/api';
+import './App.css';
+
+let msgId = 0;
+
+export default function App() {
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const hasMessages = messages.length > 0;
+
+  const handleSend = useCallback(async (text) => {
+    const userMsg = { id: ++msgId, role: 'user', text };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+
+    try {
+      const data = await sendMessage(text);
+      const botMsg = { id: ++msgId, role: 'assistant', text: data.response, sources: data.sources ?? [] };
+      setMessages((prev) => [...prev, botMsg]);
+    } catch {
+      const errMsg = {
+        id: ++msgId,
+        role: 'assistant',
+        text: 'Lo siento, hubo un error al procesar tu consulta. Por favor intentá de nuevo.',
+        sources: [],
+      };
+      setMessages((prev) => [...prev, errMsg]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleClear = useCallback(() => {
+    setMessages([]);
+  }, []);
+
+  return (
+    <div className="app">
+      <GridBackground />
+      <Header hasMessages={hasMessages} onClear={handleClear} />
+
+      <div className="app__orbs">
+        <div className="app__orb app__orb--1" />
+        <div className="app__orb app__orb--2" />
+        <div className="app__orb app__orb--3" />
+      </div>
+
+      <main className={`app__main ${hasMessages ? 'app__main--chatting' : ''}`}>
+
+        {/* Hero / título compacto */}
+        <div className={`app__hero ${hasMessages ? 'app__hero--compact' : ''}`}>
+          {!hasMessages && <HeroIcon />}
+          <h1 className="app__title">
+            {hasMessages
+              ? 'Ragy'
+              : (<>Hola, soy <span className="app__title-name">Ragy</span></>)
+            }
+          </h1>
+          {!hasMessages && (
+            <p className="app__description">
+              Tu asistente inteligente para alumnos de{' '}
+              <strong>4° año · Ingeniería en Sistemas</strong>
+              <br />
+              <span className="app__desc-detail">
+                Preguntame sobre materias, horarios, correlatividades y todo lo que necesites.
+              </span>
+            </p>
+          )}
+          {!hasMessages && (
+            <div className="app__tag-row">
+              <span className="app__tag">UADER</span>
+              <span className="app__tag-dot" />
+              <span className="app__tag">Facultad de Ciencia y Tecnología</span>
+              <span className="app__tag-dot" />
+              <span className="app__tag app__tag--accent">RAG + IA</span>
+            </div>
+          )}
+        </div>
+
+        {/* Zona de chat: mensajes + input apilados, scroll interno */}
+        {hasMessages ? (
+          <div className="app__chat-area">
+            <ChatMessages messages={messages} />
+            <div className="app__input-area">
+              <ChatInput onSend={handleSend} isLoading={isLoading} />
+            </div>
+          </div>
+        ) : (
+          <div className="app__input-area">
+            <ChatInput onSend={handleSend} isLoading={isLoading} />
+            <SuggestedQuestions onSelect={handleSend} />
+          </div>
+        )}
+
+      </main>
+
+      <StatusBar />
+    </div>
+  );
+}
