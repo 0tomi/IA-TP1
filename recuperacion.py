@@ -454,7 +454,7 @@ def main():
         config.debug = True
 
     print("\n  Inicializando servicio RAG...")
-    service = RAGService(config)
+    service = RAGService.create(config)
 
     print("\n╔══════════════════════════════════════════════════════╗")
     print("║  Listo. Escribí tu consulta o 'salir' para terminar. ║")

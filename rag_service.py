@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from dotenv import load_dotenv
 import json
 import os
@@ -48,7 +48,7 @@ class RAGServiceConfig:
     max_retries: int = 3
     retry_wait_seconds: int = 60
 
-    # Control de saneamiento
+    # Control de preparacion de datos
     refresh: bool = False
 
     # Prompt del sistema (editable por el usuario)
@@ -77,6 +77,27 @@ class RAGResponse:
     total_tokens: int | None
 
 
+def _guardar_last_data_process(config: RAGServiceConfig) -> None:
+    last_process_path = DATA_DIR / "last_data_process.json"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(last_process_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "embedding_model": config.embedding_model,
+            "chunk_size": config.chunk_size,
+            "chunk_overlap": config.chunk_overlap,
+            "chunking_technique": config.chunking_technique,
+            "embedding_batch_size": config.embedding_batch_size,
+        }, f, ensure_ascii=False, indent=2)
+
+
+def preparar_datos_rag(config: RAGServiceConfig) -> None:
+    # El saneamiento puede borrar /data, asi que soltamos cualquier cliente
+    # de Chroma abierto en este proceso antes de tocar el storage.
+    RAGService.reset()
+    ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh)
+    _guardar_last_data_process(config)
+
+
 class RAGService:
     _instance = None
     _initialized = False
@@ -86,22 +107,25 @@ class RAGService:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    @classmethod
+    def create(cls, config: RAGServiceConfig) -> "RAGService":
+        preparar_datos_rag(config)
+        return cls(config)
+
     def __init__(self, config: RAGServiceConfig):
+        runtime_config = self._runtime_config(config)
         if self._initialized:
-            if self.config != config:
+            if self.config != runtime_config:
                 raise RuntimeError(
                     "RAGService ya está inicializado con una configuración distinta. "
                     "Llamá RAGService.reset() antes de crear una nueva instancia."
                 )
             return
 
-        self.config = config
+        self.config = runtime_config
 
         load_dotenv()
         self._validar_llm_config()
-
-        carga_config = config.to_carga_config()
-        ejecutar_saneamiento(carga_config, refresh=config.refresh)
 
         # El modelo ya fue descargado durante el saneamiento. Suprimimos las
         # progress bars de huggingface_hub para que la segunda carga (desde
@@ -109,7 +133,7 @@ class RAGService:
         try:
             from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
             disable_progress_bars()
-            embeddings = construir_embeddings(carga_config)
+            embeddings = construir_embeddings(self.config.to_carga_config())
         finally:
             enable_progress_bars()
 
@@ -134,19 +158,11 @@ class RAGService:
         )
 
         self._llm = self._crear_llm()
-
-        last_process_path = DATA_DIR / "last_data_process.json"
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        with open(last_process_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "embedding_model": config.embedding_model,
-                "chunk_size": config.chunk_size,
-                "chunk_overlap": config.chunk_overlap,
-                "chunking_technique": config.chunking_technique,
-                "embedding_batch_size": config.embedding_batch_size,
-            }, f, ensure_ascii=False, indent=2)
-
         RAGService._initialized = True
+
+    @staticmethod
+    def _runtime_config(config: RAGServiceConfig) -> RAGServiceConfig:
+        return replace(config, refresh=False)
 
     def _validar_llm_config(self):
         if self.config.llm_provider == "google":

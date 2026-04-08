@@ -324,9 +324,8 @@ def main() -> None:
         service = None
         init_error = None
         for intento in range(1, args.retry + 1):
-            RAGService.reset()
             try:
-                service = RAGService(config)
+                service = RAGService.create(config)
                 init_error = None
                 break
             except Exception as e:
