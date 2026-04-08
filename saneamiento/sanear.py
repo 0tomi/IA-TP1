@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import sys
 import unicodedata
 from pathlib import Path
@@ -189,8 +190,14 @@ def parsear_args() -> CargaConfig:
     parser.add_argument("--retry-wait-seconds", type=int, default=60,
                         help="Segundos de espera entre reintentos (default: 60)")
 
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Borra /data/ y /output/ completamente antes de procesar.",
+    )
+
     args = parser.parse_args()
-    return CargaConfig(
+    config = CargaConfig(
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         embedding_model=args.embedding_model,
@@ -199,10 +206,25 @@ def parsear_args() -> CargaConfig:
         max_retries=args.max_retries,
         retry_wait_seconds=args.retry_wait_seconds,
     )
+    return config, args.refresh
 
 
 def main():
-    config = parsear_args()
+    config, refresh = parsear_args()
+
+    if refresh:
+        data_dir = ROOT / "data"
+        if data_dir.exists():
+            shutil.rmtree(data_dir)
+            print("[sanear] /data/ eliminado.")
+        if OUTPUT_DIR.exists():
+            shutil.rmtree(OUTPUT_DIR)
+            print("[sanear] /output/ eliminado.")
+
+    REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    if not REGISTRY.exists():
+        guardar_registro({})
+
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     registro = cargar_registro()

@@ -18,6 +18,14 @@ REGISTRY_PATH = DATA_DIR / "registry.json"
 COLLECTION_NAME = "rag_tp1"
 EMBEDDINGS_CACHE_DIR = DATA_DIR / "embeddings_cache"
 
+LOCAL_MODELS = {
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {},
+    "BAAI/bge-m3": {
+        "model_kwargs": {"torch_dtype": "float16"},
+        "encode_kwargs": {"normalize_embeddings": True},
+    },
+}
+
 
 @dataclass
 class CargaConfig:
@@ -195,6 +203,35 @@ def guardar_registro(registro: dict):
         json.dump(registro, f, ensure_ascii=False, indent=2)
 
 
+class _SentenceTransformerEmbeddings:
+    """Adapter mínimo para usar sentence-transformers con CacheBackedEmbeddings de LangChain."""
+
+    def __init__(self, model_name: str, model_kwargs: dict | None = None, encode_kwargs: dict | None = None):
+        from sentence_transformers import SentenceTransformer
+        self.model = SentenceTransformer(model_name, model_kwargs=model_kwargs or {})
+        self._encode_kwargs = encode_kwargs or {}
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self.model.encode(texts, convert_to_numpy=True, **self._encode_kwargs).tolist()
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.model.encode(text, convert_to_numpy=True, **self._encode_kwargs).tolist()
+
+
+def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
+    if config.embedding_model in LOCAL_MODELS:
+        extra = LOCAL_MODELS[config.embedding_model]
+        base = _SentenceTransformerEmbeddings(model_name=config.embedding_model, **extra)
+    else:
+        base = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
+
+    return CacheBackedEmbeddings.from_bytes_store(
+        underlying_embeddings=base,
+        document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
+        namespace=config.embedding_model,
+    )
+
+
 def es_error_de_rate_limit(error: Exception) -> bool:
     error_text = str(error).upper()
     return any(token in error_text for token in ("RESOURCE_EXHAUSTED", "RATE LIMIT", "429", "QUOTA"))
@@ -240,7 +277,7 @@ def procesar_lote_documentos(
     archivos: list[str],
     config: CargaConfig | None = None,
 ) -> list[tuple[str, bool]]:
-    if not os.environ.get("GOOGLE_API_KEY"):
+    if config.embedding_model not in LOCAL_MODELS and not os.environ.get("GOOGLE_API_KEY"):
         raise EnvironmentError("GOOGLE_API_KEY no encontrada en el entorno. Configurá el .env.")
 
     config = config or CargaConfig()
@@ -264,12 +301,7 @@ def procesar_lote_documentos(
     EMBEDDINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"[carga] Inicializando modelos y ChromaDB para {len(archivos)} archivo(s)...")
-    base_embeddings = GoogleGenerativeAIEmbeddings(model=f"models/{config.embedding_model}")
-    embeddings = CacheBackedEmbeddings.from_bytes_store(
-        underlying_embeddings=base_embeddings,
-        document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
-        namespace=f"models/{config.embedding_model}",
-    )
+    embeddings = construir_embeddings(config)
     vectorstore = Chroma(
         collection_name=COLLECTION_NAME,
         persist_directory=str(DATA_DIR),
