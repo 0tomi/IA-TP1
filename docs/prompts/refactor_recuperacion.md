@@ -1,3 +1,6 @@
+-----
+Modelo planeador: Opus 4.6; Orquestador Sonnet 4.6.
+-----
 Actualmente recuperacion.py engloba tanto el chat por consola con el LLM, como la llamada al proceso de saneamiento, conexion con la DB de Chroma, busqueda y demas.
 Este enfoque hace que si queremos implementar un frontend mas adelante para crear una interfaz amigable al usuario, sea imposible reutilizando este script.
 Necesito que refactorices por lo tanto el script de recuperacion.py, para crear un servicio que actue como un Singleton.
