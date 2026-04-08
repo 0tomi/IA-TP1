@@ -1,179 +1,312 @@
 import argparse
+import sys
+
+import questionary
+from questionary import Style
 
 from rag_service import RAGService, RAGServiceConfig
 
+# ── Modelos disponibles ────────────────────────────────────────────────────────
+
+LLM_MODELS = [
+    ("Gemini 3.1 Flash Lite Preview  (rápido)", "gemini-3.1-flash-lite-preview"),
+    ("Gemini 2.0 Flash",                         "gemini-2.0-flash"),
+    ("Gemini 3.0 Flash",                         "gemini-3.0-flash"),
+    ("Gemini 2.5 Pro",                           "gemini-2.5-pro"),
+]
+
+EMBEDDING_MODELS = [
+    ("Gemini Embedding 001              (Google API)",    "gemini-embedding-001"),
+    ("Multilingual E5 Small             (local, rápido)", "intfloat/multilingual-e5-small"),
+    ("Paraphrase Multilingual MiniLM    (local)",         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
+    ("All MiniLM L6 v2                  (local, inglés)", "sentence-transformers/all-MiniLM-L6-v2"),
+    ("BGE M3                            (local, pesado)", "BAAI/bge-m3"),
+]
+
+RETRIEVAL_TYPES = [
+    ("similarity_search", "similarity_search"),
+    ("mmr",               "mmr"),
+    ("threshold",         "threshold"),
+]
+
+CHUNKING_TECHNIQUES = [
+    ("recursive",            "recursive"),
+    ("fixed_size_overlap",   "fixed_size_overlap"),
+    ("paragraph_custom",     "paragraph_custom"),
+]
+
+# ── Estilo ─────────────────────────────────────────────────────────────────────
+
+STYLE = Style([
+    ("qmark",       "fg:#00bcd4 bold"),
+    ("question",    "bold"),
+    ("answer",      "fg:#00e676"),
+    ("pointer",     "fg:#00bcd4 bold"),
+    ("highlighted", "fg:#00bcd4 bold"),
+    ("selected",    "fg:#00e676"),
+    ("separator",   "fg:#444444"),
+    ("instruction", "fg:#666666 italic"),
+    ("text",        ""),
+])
+
+# ── Helpers de pregunta ────────────────────────────────────────────────────────
+
+def _mark_default(choices, default_value):
+    """Agrega '(default)' en gris al lado de la opción predeterminada."""
+    result = []
+    for label, value in choices:
+        title = f"{label}  \033[90m(default)\033[0m" if value == default_value else label
+        result.append(questionary.Choice(title=title, value=value))
+    return result
+
+
+def _select(pregunta, choices, default):
+    return questionary.select(
+        pregunta,
+        choices=_mark_default(choices, default),
+        default=next((c for c in _mark_default(choices, default) if c.value == default), None),
+        style=STYLE,
+        instruction="(↑↓ para mover, Enter para confirmar, Ctrl+C para volver)",
+    ).ask()
+
+
+def _int(pregunta, default):
+    def validar(v):
+        try:
+            int(v)
+            return True
+        except ValueError:
+            return f"Ingresá un entero (ej: {default})"
+
+    raw = questionary.text(
+        pregunta,
+        default=str(default),
+        validate=validar,
+        style=STYLE,
+        instruction="(Enter para confirmar, Ctrl+C para volver)",
+    ).ask()
+    return int(raw) if raw is not None else None
+
+
+def _float(pregunta, default):
+    def validar(v):
+        try:
+            float(v)
+            return True
+        except ValueError:
+            return f"Ingresá un número decimal (ej: {default})"
+
+    raw = questionary.text(
+        pregunta,
+        default=str(default),
+        validate=validar,
+        style=STYLE,
+        instruction="(Enter para confirmar, Ctrl+C para volver)",
+    ).ask()
+    return float(raw) if raw is not None else None
+
+
+def _confirm(pregunta, default):
+    return questionary.confirm(
+        pregunta,
+        default=default,
+        style=STYLE,
+        instruction="(Y/n, Ctrl+C para volver)",
+    ).ask()
+
+# ── Wizard ─────────────────────────────────────────────────────────────────────
 
 def pedir_configuracion() -> RAGServiceConfig:
     defaults = RAGServiceConfig()
 
-    print("\n=== Configuracion del Asistente RAG ===\n")
-    print("Modo de configuracion:")
-    print("  [1] Default (usar valores predeterminados)")
-    print("  [2] Custom (modificar parametros)")
+    print()
+    modo = _select(
+        "Modo de configuración:",
+        [
+            ("Default  (usar valores predeterminados)", "default"),
+            ("Custom   (modificar parámetros)",         "custom"),
+        ],
+        default="default",
+    )
 
-    while True:
-        opcion = input("\nSeleccione (1/2): ").strip()
-        if opcion in ("1", "2"):
-            break
-        print("Opcion invalida. Ingrese 1 o 2.")
-
-    if opcion == "1":
-        print("\nUsando configuracion por defecto:")
-        print(f"  top_k                : {defaults.top_k}")
-        print(f"  retrieval_type       : {defaults.retrieval_type}")
-        print(f"  threshold            : {defaults.threshold}")
-        print(f"  max_context_chunks   : {defaults.max_context_chunks}")
-        print(f"  temperatura          : {defaults.temperatura}")
-        print(f"  llm_model            : {defaults.llm_model}")
-        print(f"  chunk_size           : {defaults.chunk_size}")
-        print(f"  chunk_overlap        : {defaults.chunk_overlap}")
-        print(f"  embedding_model      : {defaults.embedding_model}")
-        print(f"  chunking_technique   : {defaults.chunking_technique}")
-        print(f"  embedding_batch_size : {defaults.embedding_batch_size}")
-        print(f"  max_retries          : {defaults.max_retries}")
-        print(f"  retry_wait_seconds   : {defaults.retry_wait_seconds}")
-        print(f"  refresh              : {defaults.refresh}")
-        print(f"  debug                : {defaults.debug}")
+    if modo is None:
+        return None
+    if modo == "default":
+        print("\n  Configuración por defecto:")
+        for k, v in [
+            ("top_k", defaults.top_k), ("retrieval_type", defaults.retrieval_type),
+            ("threshold", defaults.threshold), ("max_context_chunks", defaults.max_context_chunks),
+            ("temperatura", defaults.temperatura), ("llm_model", defaults.llm_model),
+            ("chunk_size", defaults.chunk_size), ("chunk_overlap", defaults.chunk_overlap),
+            ("embedding_model", defaults.embedding_model), ("chunking_technique", defaults.chunking_technique),
+            ("embedding_batch_size", defaults.embedding_batch_size), ("max_retries", defaults.max_retries),
+            ("retry_wait_seconds", defaults.retry_wait_seconds), ("refresh", defaults.refresh),
+            ("debug", defaults.debug),
+        ]:
+            print(f"    {k:<22}: {v}")
         return RAGServiceConfig()
 
-    # --- Modo Custom ---
+    # Cada paso es (clave, función que recibe kwargs y retorna valor o None)
+    # None = Ctrl+C = el wizard retrocede
+    def paso_top_k(kw):
+        return _int("  Chunks a recuperar (top_k):", defaults.top_k)
+
+    def paso_retrieval_type(kw):
+        return _select("  Tipo de búsqueda (retrieval_type):", RETRIEVAL_TYPES, defaults.retrieval_type)
+
+    def paso_threshold(kw):
+        if kw.get("retrieval_type") != "threshold":
+            return defaults.threshold  # auto-fill, no preguntar
+        return _float("  Similitud mínima (threshold, 0.0–1.0):", defaults.threshold)
+
+    def paso_max_context_chunks(kw):
+        return _int("  Chunks máximos al LLM (max_context_chunks):", defaults.max_context_chunks)
+
+    def paso_temperatura(kw):
+        return _float("  Temperatura (0.0–2.0):", defaults.temperatura)
+
+    def paso_llm_model(kw):
+        return _select("  Modelo LLM:", LLM_MODELS, defaults.llm_model)
+
+    def paso_chunk_size(kw):
+        return _int("  Tamaño de chunk (chunk_size):", defaults.chunk_size)
+
+    def paso_chunk_overlap(kw):
+        return _int("  Overlap entre chunks (chunk_overlap):", defaults.chunk_overlap)
+
+    def paso_embedding_model(kw):
+        return _select("  Modelo de embedding:", EMBEDDING_MODELS, defaults.embedding_model)
+
+    def paso_chunking_technique(kw):
+        return _select("  Técnica de chunking:", CHUNKING_TECHNIQUES, defaults.chunking_technique)
+
+    def paso_embedding_batch_size(kw):
+        return _int("  Batch size de embeddings:", defaults.embedding_batch_size)
+
+    def paso_max_retries(kw):
+        return _int("  Reintentos máximos (max_retries):", defaults.max_retries)
+
+    def paso_retry_wait(kw):
+        return _int("  Espera entre reintentos en segundos:", defaults.retry_wait_seconds)
+
+    def paso_refresh(kw):
+        return _confirm("  ¿Forzar re-procesamiento del corpus? (refresh)", defaults.refresh)
+
+    def paso_debug(kw):
+        return _confirm("  ¿Activar modo debug?", defaults.debug)
+
+    PASOS = [
+        ("top_k",               paso_top_k),
+        ("retrieval_type",      paso_retrieval_type),
+        ("threshold",           paso_threshold),
+        ("max_context_chunks",  paso_max_context_chunks),
+        ("temperatura",         paso_temperatura),
+        ("llm_model",           paso_llm_model),
+        ("chunk_size",          paso_chunk_size),
+        ("chunk_overlap",       paso_chunk_overlap),
+        ("embedding_model",     paso_embedding_model),
+        ("chunking_technique",  paso_chunking_technique),
+        ("embedding_batch_size",paso_embedding_batch_size),
+        ("max_retries",         paso_max_retries),
+        ("retry_wait_seconds",  paso_retry_wait),
+        ("refresh",             paso_refresh),
+        ("debug",               paso_debug),
+    ]
+
+    # Pasos que se auto-completan sin mostrar prompt (condicionales)
+    AUTO_PASOS = {"threshold"}
+
     kwargs = {}
+    cursor = 0
 
-    def pedir_int(nombre, default):
-        while True:
-            raw = input(f"  {nombre} [{default}]: ").strip()
-            if raw == "":
-                return default
-            try:
-                return int(raw)
-            except ValueError:
-                print(f"    Error: '{raw}' no es un entero valido.")
+    print("\n  ── Custom config  (Ctrl+C en cualquier pregunta para volver atrás) ──\n")
 
-    def pedir_float(nombre, default):
-        while True:
-            raw = input(f"  {nombre} [{default}]: ").strip()
-            if raw == "":
-                return default
-            try:
-                return float(raw)
-            except ValueError:
-                print(f"    Error: '{raw}' no es un numero valido.")
+    while cursor < len(PASOS):
+        clave, fn = PASOS[cursor]
 
-    def pedir_str(nombre, default, choices=None):
-        while True:
-            hint = "/".join(choices) if choices else default
-            raw = input(f"  {nombre} [{hint}]: ").strip()
-            if raw == "":
-                return default
-            if choices and raw not in choices:
-                print(f"    Error: opciones validas son {choices}.")
-            else:
-                return raw
+        # Si es un paso auto-fill (condicional) que no requiere input, avanzar sin registrar
+        is_auto = clave in AUTO_PASOS and kwargs.get("retrieval_type") != "threshold"
+        if is_auto:
+            kwargs[clave] = fn(kwargs)
+            cursor += 1
+            continue
 
-    def pedir_bool(nombre, default):
-        default_hint = "s" if default else "n"
-        while True:
-            raw = input(f"  {nombre} [s/n, default={default_hint}]: ").strip().lower()
-            if raw == "":
-                return default
-            if raw in ("s", "si", "y", "yes", "true"):
-                return True
-            if raw in ("n", "no", "false"):
-                return False
-            print("    Error: ingrese s o n.")
+        valor = fn(kwargs)
 
-    # Grupo 1: Retrieval
-    print("\n-- Retrieval --")
-    kwargs["top_k"] = pedir_int("top_k", defaults.top_k)
-    kwargs["retrieval_type"] = pedir_str(
-        "retrieval_type",
-        defaults.retrieval_type,
-        choices=["similarity_search", "mmr", "threshold"],
-    )
-    if kwargs["retrieval_type"] == "threshold":
-        kwargs["threshold"] = pedir_float("threshold", defaults.threshold)
-    else:
-        kwargs["threshold"] = defaults.threshold
-    kwargs["max_context_chunks"] = pedir_int("max_context_chunks", defaults.max_context_chunks)
-
-    # Grupo 2: LLM
-    print("\n-- LLM --")
-    kwargs["temperatura"] = pedir_float("temperatura", defaults.temperatura)
-    kwargs["llm_model"] = pedir_str("llm_model", defaults.llm_model)
-
-    # Grupo 3: Embedding/Chunking
-    print("\n-- Embedding/Chunking --")
-    kwargs["chunk_size"] = pedir_int("chunk_size", defaults.chunk_size)
-    kwargs["chunk_overlap"] = pedir_int("chunk_overlap", defaults.chunk_overlap)
-    kwargs["embedding_model"] = pedir_str("embedding_model", defaults.embedding_model)
-    kwargs["chunking_technique"] = pedir_str(
-        "chunking_technique",
-        defaults.chunking_technique,
-        choices=["recursive", "fixed_size_overlap", "paragraph_custom"],
-    )
-    kwargs["embedding_batch_size"] = pedir_int("embedding_batch_size", defaults.embedding_batch_size)
-
-    # Grupo 4: Retry
-    print("\n-- Retry --")
-    kwargs["max_retries"] = pedir_int("max_retries", defaults.max_retries)
-    kwargs["retry_wait_seconds"] = pedir_int("retry_wait_seconds", defaults.retry_wait_seconds)
-
-    # Grupo 5: Pipeline
-    print("\n-- Pipeline --")
-    kwargs["refresh"] = pedir_bool("refresh", defaults.refresh)
-    kwargs["debug"] = pedir_bool("debug", defaults.debug)
+        if valor is None:
+            # Ctrl+C: retroceder saltando pasos auto-fill
+            kwargs.pop(clave, None)
+            cursor -= 1
+            while cursor > 0 and PASOS[cursor][0] in AUTO_PASOS:
+                kwargs.pop(PASOS[cursor][0], None)
+                cursor -= 1
+            cursor = max(0, cursor)
+            # Limpiar el valor del paso al que volvemos para que se vuelva a preguntar
+            kwargs.pop(PASOS[cursor][0], None)
+        else:
+            kwargs[clave] = valor
+            cursor += 1
 
     return RAGServiceConfig(**kwargs)
 
+
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--debug", action="store_true", default=False)
     flags, _ = parser.parse_known_args()
 
+    print("\n╔══════════════════════════════════════╗")
+    print("║       Asistente RAG — IA TP1         ║")
+    print("╚══════════════════════════════════════╝")
+
     config = pedir_configuracion()
+    if config is None:
+        sys.exit(0)
     if flags.debug:
         config.debug = True
 
-    print("\n[RAG] Inicializando servicio...")
+    print("\n  Inicializando servicio RAG...")
     service = RAGService(config)
 
-    print("\n=== Asistente RAG Listo (escribe 'salir', 'exit' o 'quit' para terminar) ===")
+    print("\n╔══════════════════════════════════════════════════════╗")
+    print("║  Listo. Escribí tu consulta o 'salir' para terminar. ║")
+    print("╚══════════════════════════════════════════════════════╝\n")
 
     while True:
         try:
-            user_input = input("\nUsuario> ").strip()
-            if not user_input:
-                continue
-            if user_input.lower() in ("salir", "exit", "quit"):
-                print("\nAgente> ¡Hasta luego!")
-                break
+            user_input = questionary.text("Vos:", style=STYLE).ask()
 
-            response = service.query(user_input)
+            if user_input is None or user_input.lower() in ("salir", "exit", "quit"):
+                print("\n  ¡Hasta luego!\n")
+                break
+            if not user_input.strip():
+                continue
+
+            response = service.query(user_input.strip())
 
             if config.debug:
-                print(f"\n[DEBUG] --- Chunks ({response.chunks_used} usados de {response.chunks_found} encontrados) ---")
+                print(f"\n  [DEBUG] {response.chunks_used} chunks usados de {response.chunks_found} encontrados")
                 for detail in response.chunk_details:
-                    print(f"  [{detail['index']}] {detail['source']} | Seccion: {detail['section']}")
-                    print(f"      Texto: {detail['preview']}...\n")
-                print("[DEBUG] -------------------------------------")
+                    print(f"    [{detail['index']}] {detail['source']} | {detail['section']}")
+                    print(f"         {detail['preview']}...")
+                print()
 
-            print(f"\nAgente> {response.answer}")
+            print(f"\n  Agente › {response.answer}\n")
 
             if response.prompt_tokens is not None:
                 print(
-                    f"\n[Metadatos de Consumo] Tokens de entrada: {response.prompt_tokens} | "
-                    f"Tokens de salida: {response.completion_tokens} | "
-                    f"Total usados: {response.total_tokens}"
+                    f"  [tokens] entrada: {response.prompt_tokens} | "
+                    f"salida: {response.completion_tokens} | "
+                    f"total: {response.total_tokens}\n"
                 )
-            else:
-                print("\nNo se detectaron estadísticas de consumo (tokens).")
 
         except KeyboardInterrupt:
-            print("\nAgente> ¡Hasta luego!")
+            print("\n\n  ¡Hasta luego!\n")
             break
         except Exception as e:
-            print(f"\n[ERROR EN CADENA] -> {e}")
+            print(f"\n  [ERROR] {e}\n")
 
 
 if __name__ == "__main__":

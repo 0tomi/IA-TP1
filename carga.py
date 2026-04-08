@@ -231,6 +231,7 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
         underlying_embeddings=base,
         document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
         namespace=config.embedding_model,
+        key_encoder=lambda x: __import__("hashlib").sha256(x).hexdigest(),
     )
 
 
