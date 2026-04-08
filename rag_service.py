@@ -315,18 +315,29 @@ class RAGService:
     @classmethod
     def reset(cls):
         if cls._instance is not None:
-            # Borrar referencias a modelos pesados para que Python los libere
-            # antes de que la siguiente instancia intente cargar en VRAM.
+            instance = cls._instance
+            # Cerrar explicitamente el cliente de ChromaDB para liberar el lock
+            # SQLite ANTES de borrar referencias. Sin esto, un refresh=True en la
+            # siguiente conversacion hace shutil.rmtree con el archivo todavia
+            # abierto, causando SQLITE_READONLY_DBMOVED (code 1032).
+            if hasattr(instance, "_vectorstore"):
+                try:
+                    client = instance._vectorstore._client
+                    if hasattr(client, "_system"):
+                        client._system.stop()
+                except Exception:
+                    pass
             for attr in ("_vectorstore", "_retriever", "_llm"):
-                if hasattr(cls._instance, attr):
-                    delattr(cls._instance, attr)
+                if hasattr(instance, attr):
+                    delattr(instance, attr)
         cls._instance = None
         cls._initialized = False
-        # Liberar VRAM cacheada por PyTorch (no-op si torch no esta instalado)
+        # gc.collect() siempre, no solo cuando torch esta disponible
+        import gc
+        gc.collect()
+        # Liberar VRAM cacheada por PyTorch
         try:
-            import gc
             import torch
-            gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:
