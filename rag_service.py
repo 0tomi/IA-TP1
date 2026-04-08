@@ -8,6 +8,19 @@ from saneamiento.sanear import ejecutar_saneamiento
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+DEFAULT_SYSTEM_PROMPT = (
+    "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
+    "ÚNICAMENTE en la información proporcionada en el Contexto a continuación.\n"
+    "Si no puedes responder la pregunta del usuario utilizando exclusivamente la "
+    'información del Contexto, debes indicar claramente "No dispongo de información '
+    'en mis documentos para responder esta consulta." NO inventes respuestas, ni uses '
+    "conocimientos externos bajo ninguna circunstancia.\n\n"
+    "### CONTEXTO ###\n"
+    "{contexto}\n\n"
+    "### PREGUNTA DEL USUARIO ###\n"
+    "{pregunta}\n"
+)
+
 
 @dataclass
 class RAGServiceConfig:
@@ -31,6 +44,9 @@ class RAGServiceConfig:
 
     # Control de saneamiento
     refresh: bool = False
+
+    # Prompt del sistema (editable por el usuario)
+    system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
 
     def to_carga_config(self) -> CargaConfig:
         return CargaConfig(
@@ -84,7 +100,15 @@ class RAGService:
         carga_config = config.to_carga_config()
         ejecutar_saneamiento(carga_config, refresh=config.refresh)
 
-        embeddings = construir_embeddings(carga_config)
+        # El modelo ya fue descargado durante el saneamiento. Suprimimos las
+        # progress bars de huggingface_hub para que la segunda carga (desde
+        # cache local) no interfiera con el input de questionary en la consola.
+        try:
+            from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
+            disable_progress_bars()
+            embeddings = construir_embeddings(carga_config)
+        finally:
+            enable_progress_bars()
 
         self._vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
@@ -136,8 +160,10 @@ class RAGService:
             {
                 "index": i,
                 "source": doc.metadata.get("documento", "Oculto"),
-                "section": doc.metadata.get("seccion", "Sin seccion"),
-                "preview": doc.page_content[:150],
+                "materia": doc.metadata.get("materia", "—"),
+                "section": doc.metadata.get("seccion", "Sin sección"),
+                "pagina": doc.metadata.get("pagina", "—"),
+                "preview": doc.page_content[:200],
             }
             for i, doc in enumerate(docs_contexto)
         ]
@@ -163,15 +189,10 @@ class RAGService:
             )
         contexto_str = "\n\n---\n\n".join(bloques_texto)
 
-        prompt = f"""Eres un asistente diseñado estrictamente para responder a preguntas basándote ÚNICAMENTE en la información proporcionada en el Contexto a continuación.
-Si no puedes responder la pregunta del usuario utilizando exclusivamente la información del Contexto, debes indicar claramente "No dispongo de información en mis documentos para responder esta consulta." NO inventes respuestas, ni uses conocimientos externos bajo ninguna circunstancia.
-
-### CONTEXTO ###
-{contexto_str}
-
-### PREGUNTA DEL USUARIO ###
-{user_query}
-"""
+        prompt = self.config.system_prompt.format(
+            contexto=contexto_str,
+            pregunta=user_query,
+        )
 
         response = self._llm.invoke(prompt)
 
@@ -191,9 +212,11 @@ Si no puedes responder la pregunta del usuario utilizando exclusivamente la info
         if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
             usage = response.usage_metadata
             if isinstance(usage, dict):
-                prompt_tokens = usage.get("prompt_token_count")
-                completion_tokens = usage.get("candidates_token_count")
-                total_tokens = usage.get("total_token_count")
+                # langchain-google-genai moderno usa input_tokens/output_tokens/total_tokens
+                # versiones anteriores usaban prompt_token_count/candidates_token_count/total_token_count
+                prompt_tokens = usage.get("input_tokens") or usage.get("prompt_token_count")
+                completion_tokens = usage.get("output_tokens") or usage.get("candidates_token_count")
+                total_tokens = usage.get("total_tokens") or usage.get("total_token_count")
             else:
                 prompt_tokens = getattr(usage, "input_tokens", None)
                 completion_tokens = getattr(usage, "output_tokens", None)

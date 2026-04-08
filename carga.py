@@ -24,7 +24,7 @@ LOCAL_MODELS = {
     "sentence-transformers/all-MiniLM-L6-v2": {},
     "intfloat/multilingual-e5-small": {},
     "BAAI/bge-m3": {
-        "model_kwargs": {"torch_dtype": "float16"},
+        "model_kwargs": {"dtype": "float16"},
         "encode_kwargs": {"normalize_embeddings": True},
     },
 }
@@ -69,6 +69,7 @@ def parsear_toon(toon_str: str) -> dict:
     # Unescape: order matters — backslash first
     content = raw_content.replace("\\\\", "\x00BACKSLASH\x00")
     content = content.replace("\\n", "\n")
+    content = content.replace("\\f", "\f")
     content = content.replace('\\"', '"')
     content = content.replace("\x00BACKSLASH\x00", "\\")
 
@@ -100,25 +101,30 @@ def es_titulo(linea: str) -> bool:
     return bool(re.match(patron, linea))
 
 
+def detectar_titulos_en_pagina(page_text: str, current_title: str) -> tuple[list[tuple[int, str]], str]:
+    offsets = [(0, current_title)]
+    cursor = 0
+
+    for line in page_text.splitlines(keepends=True):
+        line_sin_nl = line.rstrip("\n")
+        if es_titulo(line_sin_nl):
+            current_title = line_sin_nl.strip()
+            offsets.append((cursor, current_title))
+        cursor += len(line)
+
+    return offsets, current_title
+
+
+def obtener_titulo_por_offset(offsets: list[tuple[int, str]], chunk_start: int) -> str:
+    titulo = offsets[0][1]
+    for offset, current_title in offsets:
+        if offset > chunk_start:
+            break
+        titulo = current_title
+    return titulo
+
+
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
-    # Separamos el texto por secciones (títulos) para evitar rastrear posiciones manualmente
-    sections = []
-    lines = text.split("\n")
-    current_title = "Intro / Sin título"
-    current_lines = []
-
-    for line in lines:
-        if es_titulo(line):
-            if current_lines:
-                sections.append((current_title, "\n".join(current_lines)))
-            current_title = line.strip()
-            current_lines = [line]  # Incluimos el título como parte del contenido para contexto
-        else:
-            current_lines.append(line)
-    
-    if current_lines:
-        sections.append((current_title, "\n".join(current_lines)))
-
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
@@ -127,15 +133,36 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
 
     documents = []
     chunk_idx = 0
-    for title, content in sections:
-        # Realizamos el chunking sobre cada sección de forma aislada y precisa
-        raw_chunks = splitter.split_text(content)
-        for chunk in raw_chunks:
-            documents.append(Document(
-                page_content=chunk,
-                metadata={**base_metadata, "seccion": title, "chunk_index": chunk_idx},
-            ))
-            chunk_idx += 1
+
+    current_title = "Intro / Sin título"  # persiste entre páginas
+
+    for page_num, page_text in enumerate(text.split("\f"), start=1):
+        if not page_text.strip():
+            continue
+
+        sections = []
+        lines = page_text.split("\n")
+        current_lines = []
+
+        for line in lines:
+            if es_titulo(line):
+                if current_lines:
+                    sections.append((current_title, "\n".join(current_lines)))
+                current_title = line.strip()
+                current_lines = [line]
+            else:
+                current_lines.append(line)
+
+        if current_lines:
+            sections.append((current_title, "\n".join(current_lines)))
+
+        for title, content in sections:
+            for chunk in splitter.split_text(content):
+                documents.append(Document(
+                    page_content=chunk,
+                    metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx},
+                ))
+                chunk_idx += 1
 
     return documents
 
@@ -146,43 +173,71 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
     )
-    raw_chunks = splitter.split_text(text)
-    return [
-        Document(page_content=chunk, metadata={**base_metadata, "seccion": "", "chunk_index": i})
-        for i, chunk in enumerate(raw_chunks)
-    ]
+    documents = []
+    chunk_idx = 0
+    current_title = "Intro / Sin título"
+
+    for page_num, page_text in enumerate(text.split("\f"), start=1):
+        if not page_text.strip():
+            continue
+
+        offsets, current_title = detectar_titulos_en_pagina(page_text, current_title)
+        search_from = 0
+
+        for chunk in splitter.split_text(page_text):
+            chunk_start = page_text.find(chunk, search_from)
+            if chunk_start == -1:
+                chunk_start = page_text.find(chunk)
+            if chunk_start == -1:
+                chunk_start = search_from
+
+            documents.append(Document(
+                page_content=chunk,
+                metadata={
+                    **base_metadata,
+                    "seccion": obtener_titulo_por_offset(offsets, chunk_start),
+                    "pagina": page_num,
+                    "chunk_index": chunk_idx,
+                },
+            ))
+            chunk_idx += 1
+            search_from = max(chunk_start + max(len(chunk) - config.chunk_overlap, 1), 0)
+    return documents
 
 
 def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
-    paragraphs = text.split("\n\n")
-    current_section = ""
     documents = []
     chunk_index = 0
+    current_section = ""  # persiste entre páginas
 
-    for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if not paragraph:
+    for page_num, page_text in enumerate(text.split("\f"), start=1):
+        if not page_text.strip():
             continue
 
-        if es_titulo(paragraph):
-            current_section = paragraph
-            continue
+        for paragraph in page_text.split("\n\n"):
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
 
-        if len(paragraph) <= config.chunk_size:
-            documents.append(Document(
-                page_content=paragraph,
-                metadata={**base_metadata, "seccion": current_section, "chunk_index": chunk_index},
-            ))
-            chunk_index += 1
-        else:
-            # Hard-cut into pieces of chunk_size, no overlap
-            for start in range(0, len(paragraph), config.chunk_size):
-                piece = paragraph[start:start + config.chunk_size]
+            if es_titulo(paragraph):
+                current_section = paragraph
+                continue
+
+            if len(paragraph) <= config.chunk_size:
                 documents.append(Document(
-                    page_content=piece,
-                    metadata={**base_metadata, "seccion": current_section, "chunk_index": chunk_index},
+                    page_content=paragraph,
+                    metadata={**base_metadata, "seccion": current_section, "pagina": page_num, "chunk_index": chunk_index},
                 ))
                 chunk_index += 1
+            else:
+                # Hard-cut into pieces of chunk_size, no overlap
+                for start in range(0, len(paragraph), config.chunk_size):
+                    piece = paragraph[start:start + config.chunk_size]
+                    documents.append(Document(
+                        page_content=piece,
+                        metadata={**base_metadata, "seccion": current_section, "pagina": page_num, "chunk_index": chunk_index},
+                    ))
+                    chunk_index += 1
 
     return documents
 

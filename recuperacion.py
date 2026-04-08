@@ -1,12 +1,19 @@
 import argparse
 import json
+import os
+import subprocess
 import sys
+import tempfile
+
+GREEN = "\033[92m"
+RESET = "\033[0m"
+_DEBUG_W = 72  # ancho interior del cuadro de debug
 
 import questionary
 from questionary import Style
 
 from carga import DATA_DIR
-from rag_service import RAGService, RAGServiceConfig
+from rag_service import RAGService, RAGServiceConfig, DEFAULT_SYSTEM_PROMPT
 
 # ── Modelos disponibles ────────────────────────────────────────────────────────
 
@@ -114,6 +121,46 @@ def _confirm(pregunta, default):
         style=STYLE,
     ).ask()
 
+# ── Editor de prompt ───────────────────────────────────────────────────────────
+
+_EDITOR_HEADER = """\
+# Editá el prompt del sistema.
+# Placeholders obligatorios: {contexto}  y  {pregunta}
+# Estas líneas que empiezan con # son comentarios y se descartan al guardar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+"""
+
+def _abrir_editor(prompt_actual: str) -> str | None:
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(_EDITOR_HEADER + prompt_actual)
+        tmpfile = f.name
+
+    try:
+        ret = subprocess.call([editor, tmpfile])
+        if ret != 0:
+            print(f"\n  [aviso] El editor salió con código {ret}. Se mantiene el prompt original.")
+            return prompt_actual
+
+        with open(tmpfile, encoding="utf-8") as f:
+            lines = [l for l in f.readlines() if not l.startswith("#")]
+        resultado = "".join(lines).strip()
+
+        if not resultado:
+            print("\n  [aviso] El prompt quedó vacío. Se mantiene el original.")
+            return prompt_actual
+        if "{contexto}" not in resultado or "{pregunta}" not in resultado:
+            print("\n  [aviso] Faltan {contexto} o {pregunta}. Se mantiene el original.")
+            return prompt_actual
+
+        return resultado
+    finally:
+        os.unlink(tmpfile)
+
+
 # ── Wizard ─────────────────────────────────────────────────────────────────────
 
 def _cargar_last_config() -> dict:
@@ -162,7 +209,9 @@ def pedir_configuracion() -> RAGServiceConfig:
             ("debug", defaults.debug),
         ]:
             print(f"    {k:<22}: {v}")
-        return RAGServiceConfig()
+        prompt_preview = defaults.system_prompt.split("\n")[0][:60]
+        print(f"    {'system_prompt':<22}: {prompt_preview}…")
+        return defaults
 
     # Cada paso es (clave, función que recibe kwargs y retorna valor o None)
     # None = Ctrl+C = el wizard retrocede
@@ -213,6 +262,15 @@ def pedir_configuracion() -> RAGServiceConfig:
     def paso_debug(kw):
         return _confirm("  ¿Activar modo debug?", defaults.debug)
 
+    def paso_system_prompt(kw):
+        editar = _confirm("  ¿Editar el prompt del sistema?", False)
+        if editar is None:
+            return None  # Ctrl+C = retroceder
+        if not editar:
+            return defaults.system_prompt
+        resultado = _abrir_editor(defaults.system_prompt)
+        return resultado  # _abrir_editor nunca devuelve None
+
     PASOS = [
         ("top_k",               paso_top_k),
         ("retrieval_type",      paso_retrieval_type),
@@ -229,6 +287,7 @@ def pedir_configuracion() -> RAGServiceConfig:
         ("retry_wait_seconds",  paso_retry_wait),
         ("refresh",             paso_refresh),
         ("debug",               paso_debug),
+        ("system_prompt",       paso_system_prompt),
     ]
 
     # Pasos que se auto-completan sin mostrar prompt (condicionales)
@@ -268,6 +327,32 @@ def pedir_configuracion() -> RAGServiceConfig:
     return RAGServiceConfig(**kwargs)
 
 
+# ── Debug block ────────────────────────────────────────────────────────────────
+
+def _print_debug(response):
+    W = _DEBUG_W
+
+    def row(text):
+        if len(text) > W - 2:
+            text = text[: W - 3] + "…"
+        print(f"  ║ {text:<{W - 2}}║")
+
+    header = f" DEBUG · {response.chunks_used} chunks usados de {response.chunks_found} encontrados "
+    print(f"\n  ╔{'═' * W}╗")
+    print(f"  ║{header:^{W}}║")
+    print(f"  ╠{'═' * W}╣")
+    for i, detail in enumerate(response.chunk_details):
+        row(f"[{detail['index']}] Documento : {detail['source']}")
+        row(f"    Materia   : {detail.get('materia', '—')}")
+        row(f"    Página    : {detail.get('pagina', '—')}")
+        row(f"    Sección   : {detail['section']}")
+        preview = detail["preview"].strip().replace("\n", " ")
+        row(f"    Preview   : {preview}")
+        if i < len(response.chunk_details) - 1:
+            print(f"  ╠{'─' * W}╣")
+    print(f"  ╚{'═' * W}╝")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
@@ -305,14 +390,9 @@ def main():
             response = service.query(user_input.strip())
 
             if config.debug:
-                print(f"\n  ┌─ DEBUG: {response.chunks_used} chunks usados de {response.chunks_found} encontrados")
-                for detail in response.chunk_details:
-                    print(f"  ├─ [{detail['index']}] {detail['source']}")
-                    print(f"  │   Sección : {detail['section']}")
-                    print(f"  │   Preview : {detail['preview'].strip()[:120]}...")
-                print(f"  └{'─' * 50}\n")
+                _print_debug(response)
 
-            print(f"\n  Agente › {response.answer}\n")
+            print(f"\n  {GREEN}RAGi ›{RESET} {response.answer}\n")
 
             if response.prompt_tokens is not None:
                 print(

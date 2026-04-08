@@ -83,9 +83,12 @@ def extraer_texto(pdf_path: Path) -> tuple[str, int]:
     paginas = []
     for page in reader.pages:
         texto = page.extract_text()
-        if texto:
-            paginas.append(texto)
-    return "\n".join(paginas), len(reader.pages)
+        # Incluimos siempre — aunque sea vacía — para que el índice \f
+        # coincida exactamente con el número de página física del PDF.
+        paginas.append(texto or "")
+    # \f (form feed) como separador de páginas — se preserva hasta los chunkers
+    # para que puedan anotar el número de página en cada chunk.
+    return "\f".join(paginas), len(reader.pages)
 
 def sanear(texto: str) -> str:
     # 1. Limpieza de caracteres raros
@@ -108,7 +111,7 @@ def sanear(texto: str) -> str:
     texto = re.sub(r'(?<=[a-záéíóúñü,;])\n(?=[a-záéíóúñü])', ' ', texto)
 
     # 3. Trim general y colapso de whitespaces
-    texto = re.sub(r'[^\S\n]+', ' ', texto)            # espacios multiples a uno solo
+    texto = re.sub(r'[^\S\n\f]+', ' ', texto)           # espacios multiples a uno solo (preserva \f)
     texto = re.sub(r' +([.,;:])', r'\1', texto)        # arregla el espacio feo antes de comas/puntos
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
@@ -116,11 +119,13 @@ def sanear(texto: str) -> str:
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    return texto.strip()
+    # Recortamos por página para no perder separadores \f en bordes del documento.
+    paginas = [pagina.strip() for pagina in texto.split("\f")]
+    return "\f".join(paginas)
 
 def escapar_toon(text: str) -> str:
     # Helper para que no rompa el formato toon
-    return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+    return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\f', '\\f')
 
 def guardar_toon(doc: dict, output_path: Path):
     with open(output_path, 'w', encoding='utf-8') as f:
