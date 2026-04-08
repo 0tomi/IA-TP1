@@ -83,8 +83,9 @@ def extraer_texto(pdf_path: Path) -> tuple[str, int]:
     paginas = []
     for page in reader.pages:
         texto = page.extract_text()
-        if texto:
-            paginas.append(texto)
+        # Incluimos siempre — aunque sea vacía — para que el índice \f
+        # coincida exactamente con el número de página física del PDF.
+        paginas.append(texto or "")
     # \f (form feed) como separador de páginas — se preserva hasta los chunkers
     # para que puedan anotar el número de página en cada chunk.
     return "\f".join(paginas), len(reader.pages)

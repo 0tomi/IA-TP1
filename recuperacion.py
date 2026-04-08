@@ -166,7 +166,7 @@ def pedir_configuracion() -> RAGServiceConfig:
             ("debug", defaults.debug),
         ]:
             print(f"    {k:<22}: {v}")
-        return RAGServiceConfig()
+        return defaults
 
     # Cada paso es (clave, función que recibe kwargs y retorna valor o None)
     # None = Ctrl+C = el wizard retrocede

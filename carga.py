@@ -110,6 +110,7 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
 
     documents = []
     chunk_idx = 0
+    current_title = "Intro / Sin título"  # persiste entre páginas
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
@@ -117,7 +118,6 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
 
         sections = []
         lines = page_text.split("\n")
-        current_title = "Intro / Sin título"
         current_lines = []
 
         for line in lines:
@@ -166,12 +166,12 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
 def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     documents = []
     chunk_index = 0
+    current_section = ""  # persiste entre páginas
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
 
-        current_section = ""
         for paragraph in page_text.split("\n\n"):
             paragraph = paragraph.strip()
             if not paragraph:
