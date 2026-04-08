@@ -55,7 +55,7 @@ def _mark_default(choices, default_value):
     """Agrega '(default)' en gris al lado de la opción predeterminada."""
     result = []
     for label, value in choices:
-        title = f"{label}  \033[90m(default)\033[0m" if value == default_value else label
+        title = f"{label}  (default)" if value == default_value else label
         result.append(questionary.Choice(title=title, value=value))
     return result
 
@@ -68,7 +68,6 @@ def _select(pregunta, choices, default):
         choices=marked,
         default=default_choice,
         style=STYLE,
-        instruction="(↑↓ para mover, Enter para confirmar, Ctrl+C para volver)",
     ).ask()
 
 
@@ -85,7 +84,6 @@ def _int(pregunta, default):
         default=str(default),
         validate=validar,
         style=STYLE,
-        instruction="(Enter para confirmar, Ctrl+C para volver)",
     ).ask()
     return int(raw) if raw is not None else None
 
@@ -103,7 +101,6 @@ def _float(pregunta, default):
         default=str(default),
         validate=validar,
         style=STYLE,
-        instruction="(Enter para confirmar, Ctrl+C para volver)",
     ).ask()
     return float(raw) if raw is not None else None
 
@@ -113,7 +110,6 @@ def _confirm(pregunta, default):
         pregunta,
         default=default,
         style=STYLE,
-        instruction="(Y/n, Ctrl+C para volver)",
     ).ask()
 
 # ── Wizard ─────────────────────────────────────────────────────────────────────
