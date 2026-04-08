@@ -274,7 +274,7 @@ def main():
 
     while True:
         try:
-            user_input = questionary.text("Vos:", style=STYLE).ask()
+            user_input = questionary.text("Prompt:", style=STYLE).ask()
 
             if user_input is None or user_input.lower() in ("salir", "exit", "quit"):
                 print("\n  ¡Hasta luego!\n")
@@ -285,11 +285,12 @@ def main():
             response = service.query(user_input.strip())
 
             if config.debug:
-                print(f"\n  [DEBUG] {response.chunks_used} chunks usados de {response.chunks_found} encontrados")
+                print(f"\n  ┌─ DEBUG: {response.chunks_used} chunks usados de {response.chunks_found} encontrados")
                 for detail in response.chunk_details:
-                    print(f"    [{detail['index']}] {detail['source']} | {detail['section']}")
-                    print(f"         {detail['preview']}...")
-                print()
+                    print(f"  ├─ [{detail['index']}] {detail['source']}")
+                    print(f"  │   Sección : {detail['section']}")
+                    print(f"  │   Preview : {detail['preview'].strip()[:120]}...")
+                print(f"  └{'─' * 50}\n")
 
             print(f"\n  Agente › {response.answer}\n")
 

@@ -163,18 +163,32 @@ Si no puedes responder la pregunta del usuario utilizando exclusivamente la info
 
         response = self._llm.invoke(prompt)
 
+        # Extraer texto — content puede ser str o lista de bloques según la versión de langchain-google-genai
+        content = response.content
+        if isinstance(content, list):
+            content = next(
+                (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
+                "",
+            )
+
+        # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
         prompt_tokens = None
         completion_tokens = None
         total_tokens = None
 
         if hasattr(response, "usage_metadata") and response.usage_metadata is not None:
             usage = response.usage_metadata
-            prompt_tokens = usage.get("prompt_token_count", 0)
-            completion_tokens = usage.get("candidates_token_count", 0)
-            total_tokens = usage.get("total_token_count", 0)
+            if isinstance(usage, dict):
+                prompt_tokens = usage.get("prompt_token_count")
+                completion_tokens = usage.get("candidates_token_count")
+                total_tokens = usage.get("total_token_count")
+            else:
+                prompt_tokens = getattr(usage, "input_tokens", None)
+                completion_tokens = getattr(usage, "output_tokens", None)
+                total_tokens = getattr(usage, "total_tokens", None)
 
         return RAGResponse(
-            answer=response.content,
+            answer=content,
             chunks_found=chunks_found,
             chunks_used=chunks_used,
             chunk_details=chunk_details,
