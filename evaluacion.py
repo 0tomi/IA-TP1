@@ -9,6 +9,7 @@ contra el RAGService, y genera reportes en tests/test-N.md.
 """
 import argparse
 import dataclasses
+import os
 import re
 import sys
 from datetime import datetime
@@ -16,13 +17,7 @@ from pathlib import Path
 
 from rag_service import RAGService, RAGServiceConfig, RAGResponse
 
-# Campos de RAGServiceConfig y sus tipos para parseo automatico
-_CONFIG_FIELDS: dict[str, type] = {
-    f.name: f.type if isinstance(f.type, type) else type(f.default)
-    for f in dataclasses.fields(RAGServiceConfig)
-}
-
-# Overrides manuales para campos con tipos que no se pueden inferir facilmente
+# Tipos de cada campo de RAGServiceConfig para parseo automatico
 _FIELD_TYPES: dict[str, type] = {
     "top_k": int,
     "retrieval_type": str,
@@ -49,7 +44,13 @@ ROOT = Path(__file__).resolve().parent
 def _castear_valor(clave: str, valor_str: str) -> object:
     tipo = _FIELD_TYPES.get(clave)
     if tipo is bool:
-        return valor_str.strip().lower() == "true"
+        val = valor_str.strip().lower()
+        if val not in ("true", "false"):
+            raise ValueError(
+                f"Valor invalido para '{clave}': '{valor_str.strip()}'. "
+                "Se esperaba 'true' o 'false'."
+            )
+        return val == "true"
     if tipo is int:
         return int(valor_str.strip())
     if tipo is float:
@@ -63,6 +64,7 @@ def parsear_evaluacion(path: Path) -> tuple[list[str], list[dict]]:
     lineas = texto.splitlines()
 
     seccion_actual = None
+    in_params_section = False
     preguntas: list[str] = []
     sets_parametros: list[dict] = []
     params_actuales: dict = {}
@@ -70,19 +72,25 @@ def parsear_evaluacion(path: Path) -> tuple[list[str], list[dict]]:
     for linea in lineas:
         encabezado = re.match(r"^\[(.+)\]\s*$", linea)
         if encabezado:
-            if seccion_actual and seccion_actual.lower().startswith("par") and params_actuales:
+            # Cerrar seccion de parametros anterior (incluso si estaba vacia)
+            if in_params_section:
                 sets_parametros.append(params_actuales)
                 params_actuales = {}
+                in_params_section = False
             seccion_actual = encabezado.group(1).strip()
+            if seccion_actual.lower().startswith("par"):
+                in_params_section = True
             continue
 
         if seccion_actual is None:
             continue
 
         if seccion_actual.lower() == "preguntas":
-            if linea.strip():
-                preguntas.append(linea.strip())
-        elif seccion_actual.lower().startswith("par"):
+            stripped = linea.strip()
+            # Ignorar lineas vacias y comentarios
+            if stripped and not stripped.startswith("#"):
+                preguntas.append(stripped)
+        elif in_params_section:
             if "=" in linea:
                 clave, _, valor = linea.partition("=")
                 clave = clave.strip().replace("-", "_")
@@ -91,7 +99,8 @@ def parsear_evaluacion(path: Path) -> tuple[list[str], list[dict]]:
                 else:
                     print(f"[evaluacion] Advertencia: parametro desconocido '{clave}', se ignora.")
 
-    if seccion_actual and seccion_actual.lower().startswith("par") and params_actuales:
+    # Cerrar ultimo bloque de parametros
+    if in_params_section:
         sets_parametros.append(params_actuales)
 
     if not preguntas:
@@ -107,17 +116,24 @@ def construir_config(params: dict) -> RAGServiceConfig:
 
 
 def next_test_path() -> Path:
+    """Reserva atomicamente el proximo test-N.md para evitar colisiones concurrentes."""
     tests_dir = ROOT / "tests"
     tests_dir.mkdir(exist_ok=True)
 
-    numeros = []
-    for f in tests_dir.glob("test-*.md"):
-        m = re.match(r"test-(\d+)", f.stem)
-        if m:
-            numeros.append(int(m.group(1)))
-
-    siguiente = max(numeros, default=0) + 1
-    return tests_dir / f"test-{siguiente}.md"
+    while True:
+        numeros = []
+        for f in tests_dir.glob("test-*.md"):
+            m = re.match(r"test-(\d+)", f.stem)
+            if m:
+                numeros.append(int(m.group(1)))
+        siguiente = max(numeros, default=0) + 1
+        candidate = tests_dir / f"test-{siguiente}.md"
+        try:
+            fd = os.open(str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            return candidate
+        except FileExistsError:
+            continue
 
 
 def formatear_chunks(chunk_details: list[dict]) -> str:
@@ -155,18 +171,33 @@ def generar_markdown(
     total_total = 0
     resumen_filas: list[tuple[int, int | str, int | str, int | str]] = []
 
+    prev_config = None
     for idx_conv, (config, resultados_conv) in enumerate(zip(configs, resultados), start=1):
         lineas.append(f"## Conversacion {idx_conv}")
         lineas.append("")
-        lineas.append("**Parametros:**")
+
+        campos = [f for f in dataclasses.fields(config) if f.name != "system_prompt"]
+        if prev_config is None:
+            filas_params = [(f.name, getattr(config, f.name)) for f in campos]
+            lineas.append("**Parametros:**")
+        else:
+            filas_params = [
+                (f.name, getattr(config, f.name))
+                for f in campos
+                if getattr(config, f.name) != getattr(prev_config, f.name)
+            ]
+            lineas.append("**Parametros modificados respecto a la conversacion anterior:**")
+
         lineas.append("")
-        lineas.append("| Parametro | Valor |")
-        lineas.append("|---|---|")
-        for f in dataclasses.fields(config):
-            if f.name == "system_prompt":
-                continue
-            lineas.append(f"| {f.name} | {getattr(config, f.name)} |")
+        if filas_params:
+            lineas.append("| Parametro | Valor |")
+            lineas.append("|---|---|")
+            for nombre, valor in filas_params:
+                lineas.append(f"| {nombre} | {valor} |")
+        else:
+            lineas.append("_Sin cambios respecto a la conversacion anterior._")
         lineas.append("")
+        prev_config = config
 
         conv_entrada = 0
         conv_salida = 0
@@ -195,11 +226,11 @@ def generar_markdown(
                 lineas.append("")
                 lineas.append(formatear_tokens(respuesta))
 
-                if respuesta.prompt_tokens:
+                if respuesta.prompt_tokens is not None:
                     conv_entrada += respuesta.prompt_tokens
-                if respuesta.completion_tokens:
+                if respuesta.completion_tokens is not None:
                     conv_salida += respuesta.completion_tokens
-                if respuesta.total_tokens:
+                if respuesta.total_tokens is not None:
                     conv_total += respuesta.total_tokens
 
             lineas.append("")
@@ -234,7 +265,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluacion automatizada del RAG")
     parser.add_argument(
         "--retry", type=int, default=3,
-        help="Reintentos ante rate limit por defecto (default: 3)"
+        help="Reintentos del runner ante excepciones por pregunta (default: 3). "
+             "Independiente de max_retries del servicio, que se configura en el archivo de evaluacion."
     )
     parser.add_argument(
         "--file", type=str, default="evaluacion.md",
@@ -265,8 +297,8 @@ def main() -> None:
                 if f.default is not dataclasses.MISSING}
     # system_prompt tiene default_factory, lo resolvemos manualmente
     defaults["system_prompt"] = RAGServiceConfig().system_prompt
-    # Aplicar el --retry como default de max_retries
-    defaults["max_retries"] = args.retry
+    # Nota: max_retries del servicio se configura en el archivo de evaluacion.
+    # args.retry controla los reintentos del runner (capa externa), son conceptos distintos.
 
     current_params = dict(defaults)
 
