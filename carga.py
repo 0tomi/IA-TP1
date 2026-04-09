@@ -297,6 +297,18 @@ def es_error_de_rate_limit(error: Exception) -> bool:
     return any(token in error_text for token in ("RESOURCE_EXHAUSTED", "RATE LIMIT", "429", "QUOTA"))
 
 
+def es_error_de_cuota_agotada(error: Exception) -> bool:
+    error_text = str(error).upper()
+    patrones = (
+        "GENERATEREQUESTSPERDAYPERPROJECTPERMODEL-FREETIER",
+        "PERDAYPERPROJECTPERMODEL",
+        "GENERATE_CONTENT_FREE_TIER_REQUESTS",
+        "CHECK YOUR PLAN AND BILLING DETAILS",
+        "CURRENT QUOTA",
+    )
+    return "RESOURCE_EXHAUSTED" in error_text and any(patron in error_text for patron in patrones)
+
+
 def construir_chunk_ids(filename: str, sha256: str, chunks: list[Document]) -> list[str]:
     version = sha256 or "sin-sha"
     return [f"{filename}:{version}:{chunk.metadata['chunk_index']}" for chunk in chunks]

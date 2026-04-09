@@ -2,10 +2,10 @@
 Script de evaluacion automatizada del RAG.
 
 Uso:
-    python evaluacion.py [--retry N] [--file evaluacion.md]
+    python evaluacion.py [--retry N] [--file evaluacion.md] [--name NOMBRE]
 
 Lee preguntas y sets de parametros de evaluacion.md, ejecuta conversaciones
-contra el RAGService, y genera reportes en tests/test-N.md.
+contra el RAGService, y genera reportes en tests/test-N.md o tests/NOMBRE.md.
 """
 import argparse
 import dataclasses
@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from carga import es_error_de_cuota_agotada
 from rag_service import RAGService, RAGServiceConfig, RAGResponse
 
 # Tipos de cada campo de RAGServiceConfig para parseo automatico
@@ -39,6 +40,7 @@ _FIELD_TYPES: dict[str, type] = {
 }
 
 ROOT = Path(__file__).resolve().parent
+ResultadoPregunta = tuple[str | None, RAGResponse | None]
 
 
 def _castear_valor(clave: str, valor_str: str) -> object:
@@ -115,10 +117,44 @@ def construir_config(params: dict) -> RAGServiceConfig:
     return RAGServiceConfig(**params)
 
 
-def next_test_path() -> Path:
-    """Reserva atomicamente el proximo test-N.md para evitar colisiones concurrentes."""
+def _reservar_archivo(path: Path) -> bool:
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+
+
+def _normalizar_nombre_reporte(name: str) -> str:
+    name = name.strip()
+    if not name:
+        raise ValueError("El nombre del reporte no puede estar vacio.")
+
+    separadores_invalidos = [sep for sep in (os.sep, os.altsep) if sep]
+    if any(sep in name for sep in separadores_invalidos):
+        raise ValueError("--name debe ser un nombre de archivo, sin directorios.")
+
+    stem = name[:-3] if name.lower().endswith(".md") else name
+    stem = stem.strip()
+    if stem in {"", ".", ".."}:
+        raise ValueError("El nombre del reporte no es valido.")
+    return stem
+
+
+def resolve_test_output(name: str | None) -> tuple[Path, str]:
+    """Reserva atomicamente el output del reporte evitando colisiones concurrentes."""
     tests_dir = ROOT / "tests"
     tests_dir.mkdir(exist_ok=True)
+
+    if name is not None:
+        base = _normalizar_nombre_reporte(name)
+        candidate = tests_dir / f"{base}.md"
+        suffix = 2
+        while not _reservar_archivo(candidate):
+            candidate = tests_dir / f"{base}-{suffix}.md"
+            suffix += 1
+        return candidate, candidate.stem
 
     while True:
         numeros = []
@@ -128,12 +164,8 @@ def next_test_path() -> Path:
                 numeros.append(int(m.group(1)))
         siguiente = max(numeros, default=0) + 1
         candidate = tests_dir / f"test-{siguiente}.md"
-        try:
-            fd = os.open(str(candidate), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            return candidate
-        except FileExistsError:
-            continue
+        if _reservar_archivo(candidate):
+            return candidate, f"Test {siguiente}"
 
 
 def formatear_chunks(chunk_details: list[dict]) -> str:
@@ -161,14 +193,98 @@ def _mostrar_token_count(valor: int) -> int | str:
     return valor
 
 
-def generar_markdown(
-    test_n: int,
+def _ruta_relativa_a_root(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _cantidad_preguntas_procesadas(resultados: list[list[ResultadoPregunta]]) -> int:
+    return sum(len(resultados_conv) for resultados_conv in resultados)
+
+
+def _interrupcion_siguiente_posicion(
+    resultados: list[list[ResultadoPregunta]],
+    total_conversaciones: int,
+    total_preguntas: int,
+) -> tuple[int, int] | None:
+    if not resultados:
+        return (1, 1)
+
+    idx_conv = len(resultados)
+    preguntas_procesadas = len(resultados[-1])
+    if preguntas_procesadas < total_preguntas:
+        return idx_conv, preguntas_procesadas + 1
+
+    if idx_conv < total_conversaciones:
+        return idx_conv + 1, 1
+
+    return None
+
+
+def guardar_snapshot(
+    test_path: Path,
+    titulo: str,
+    fecha_inicio: str,
+    eval_path: Path,
     preguntas: list[str],
-    resultados: list[list[tuple[str | None, RAGResponse | None]]],
+    resultados: list[list[ResultadoPregunta]],
     configs: list[RAGServiceConfig],
+    total_conversaciones: int,
+    estado: str,
+    interrumpido_en: tuple[int, int] | None = None,
+) -> None:
+    contenido = generar_markdown(
+        titulo=titulo,
+        fecha_inicio=fecha_inicio,
+        eval_path=eval_path,
+        preguntas=preguntas,
+        resultados=resultados,
+        configs=configs,
+        total_conversaciones=total_conversaciones,
+        estado=estado,
+        interrumpido_en=interrumpido_en,
+    )
+    tmp_path = test_path.with_name(f"{test_path.name}.tmp")
+    tmp_path.write_text(contenido, encoding="utf-8")
+    os.replace(tmp_path, test_path)
+
+
+def generar_markdown(
+    titulo: str,
+    fecha_inicio: str,
+    eval_path: Path,
+    preguntas: list[str],
+    resultados: list[list[ResultadoPregunta]],
+    configs: list[RAGServiceConfig],
+    total_conversaciones: int,
+    estado: str,
+    interrumpido_en: tuple[int, int] | None = None,
 ) -> str:
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lineas = [f"# Evaluacion — Test {test_n}", f"", f"_Generado: {ahora}_", ""]
+    preguntas_procesadas = _cantidad_preguntas_procesadas(resultados)
+    lineas = [
+        f"# Evaluacion — {titulo}",
+        "",
+        f"_Iniciada: {fecha_inicio}_",
+        f"_Ultima actualizacion: {ahora}_",
+        "",
+        f"**Estado:** {estado}",
+        f"**Archivo de evaluacion:** `{_ruta_relativa_a_root(eval_path)}`",
+        f"**Preguntas:** {len(preguntas)} | **Conversaciones planificadas:** {total_conversaciones} | **Conversaciones iniciadas:** {len(configs)} | **Preguntas procesadas:** {preguntas_procesadas}",
+    ]
+
+    if interrumpido_en is not None:
+        lineas.append(
+            f"**Interrumpida en:** conversacion {interrumpido_en[0]}, antes de la pregunta {interrumpido_en[1]}"
+        )
+
+    lineas.append("")
+
+    if not configs:
+        lineas.append("_Aun no se inicio ninguna conversacion._")
+        lineas.append("")
 
     total_entrada = 0
     total_salida = 0
@@ -207,9 +323,8 @@ def generar_markdown(
         conv_salida = 0
         conv_total = 0
 
-        for idx_preg, (pregunta, (error, respuesta)) in enumerate(
-            zip(preguntas, resultados_conv), start=1
-        ):
+        for idx_preg, (error, respuesta) in enumerate(resultados_conv, start=1):
+            pregunta = preguntas[idx_preg - 1]
             if error:
                 lineas.append(f"### Pregunta {idx_preg} [ERROR]")
                 lineas.append("")
@@ -241,6 +356,19 @@ def generar_markdown(
             lineas.append("---")
             lineas.append("")
 
+        if len(resultados_conv) < len(preguntas):
+            siguiente = len(resultados_conv) + 1
+            if estado == "interrumpido" and interrumpido_en == (idx_conv, siguiente):
+                lineas.append(
+                    f"_Evaluacion interrumpida antes de procesar la pregunta {siguiente}._"
+                )
+                lineas.append("")
+            elif estado == "en progreso" and idx_conv == len(resultados):
+                lineas.append(
+                    f"_Evaluacion en progreso. La siguiente pregunta a procesar es la {siguiente}._"
+                )
+                lineas.append("")
+
         total_entrada += conv_entrada
         total_salida += conv_salida
         total_total += conv_total
@@ -268,13 +396,17 @@ def generar_markdown(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluacion automatizada del RAG")
     parser.add_argument(
-        "--retry", type=int, default=3,
-        help="Reintentos del runner ante excepciones por pregunta (default: 3). "
+        "--retry", type=int, default=10,
+        help="Reintentos del runner ante excepciones por pregunta (default: 10). "
              "Independiente de max_retries del servicio, que se configura en el archivo de evaluacion."
     )
     parser.add_argument(
         "--file", type=str, default="evaluacion.md",
         help="Archivo de evaluacion (default: evaluacion.md)"
+    )
+    parser.add_argument(
+        "--name", type=str, default=None,
+        help="Nombre base del reporte dentro de tests/ (ej: --name corrida-ollama). Si existe, se agrega sufijo automaticamente."
     )
     args = parser.parse_args()
 
@@ -292,8 +424,13 @@ def main() -> None:
 
     print(f"[evaluacion] {len(preguntas)} pregunta(s), {len(sets_parametros)} set(s) de parametros.")
 
-    test_path = next_test_path()
-    test_n = int(re.search(r"\d+", test_path.stem).group())
+    try:
+        test_path, report_title = resolve_test_output(args.name)
+    except ValueError as e:
+        print(f"[evaluacion] Error en --name: {e}")
+        sys.exit(1)
+
+    fecha_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[evaluacion] Resultado se guardara en: {test_path}")
 
     # Acumulacion de parametros entre sets (carry-over)
@@ -306,81 +443,212 @@ def main() -> None:
 
     current_params = dict(defaults)
 
-    todos_resultados: list[list[tuple[str | None, RAGResponse | None]]] = []
+    todos_resultados: list[list[ResultadoPregunta]] = []
     configs_usadas: list[RAGServiceConfig] = []
+    estado = "en progreso"
+    interrumpido_en = None
 
-    for idx_conv, set_params in enumerate(sets_parametros, start=1):
-        # refresh NO se acumula: default False salvo que este explicitamente en este set
-        refresh_explícito = "refresh" in set_params
-        current_params.update(set_params)
-        if not refresh_explícito:
-            current_params["refresh"] = False
+    guardar_snapshot(
+        test_path=test_path,
+        titulo=report_title,
+        fecha_inicio=fecha_inicio,
+        eval_path=eval_path,
+        preguntas=preguntas,
+        resultados=todos_resultados,
+        configs=configs_usadas,
+        total_conversaciones=len(sets_parametros),
+        estado=estado,
+    )
 
-        config = construir_config(current_params)
-        configs_usadas.append(config)
+    try:
+        for idx_conv, set_params in enumerate(sets_parametros, start=1):
+            # refresh NO se acumula: default False salvo que este explicitamente en este set
+            refresh_explicito = "refresh" in set_params
+            current_params.update(set_params)
+            if not refresh_explicito:
+                current_params["refresh"] = False
 
-        print(f"\n[evaluacion] Conversacion {idx_conv} iniciada")
+            config = construir_config(current_params)
+            configs_usadas.append(config)
+            resultados_conv: list[ResultadoPregunta] = []
+            todos_resultados.append(resultados_conv)
 
-        service = None
-        init_error = None
-        for intento in range(1, args.retry + 1):
-            try:
-                service = RAGService.create(config)
-                init_error = None
-                break
-            except Exception as e:
-                init_error = e
-                if intento < args.retry:
-                    print(
-                        f"[evaluacion] Error al inicializar conversacion {idx_conv} "
-                        f"(intento {intento}/{args.retry}): {e}"
-                    )
-                else:
-                    print(
-                        f"[evaluacion] Error al inicializar conversacion {idx_conv} "
-                        f"tras {args.retry} intento(s): {e}"
-                    )
+            print(f"\n[evaluacion] Conversacion {idx_conv} iniciada")
 
-        if init_error is not None:
-            todos_resultados.append([(str(init_error), None)] * len(preguntas))
-            print(f"[evaluacion] Conversacion {idx_conv} finalizada con error de inicializacion.")
-            continue
-
-        resultados_conv: list[tuple[str | None, RAGResponse | None]] = []
-
-        for idx_preg, pregunta in enumerate(preguntas, start=1):
-            print(f"[evaluacion] Pregunta {idx_preg}/{len(preguntas)}...")
-            exito = False
-            ultimo_error = None
-
+            service = None
+            init_error = None
             for intento in range(1, args.retry + 1):
                 try:
-                    respuesta = service.query(pregunta)
-                    resultados_conv.append((None, respuesta))
-                    exito = True
+                    service = RAGService.create(config)
+                    init_error = None
                     break
                 except Exception as e:
-                    ultimo_error = e
+                    init_error = e
+                    if es_error_de_cuota_agotada(e):
+                        print(
+                            f"[evaluacion] Cuota agotada al inicializar conversacion {idx_conv}; "
+                            "no se reintenta."
+                        )
+                        break
                     if intento < args.retry:
                         print(
-                            f"[evaluacion] Error en pregunta {idx_preg} "
+                            f"[evaluacion] Error al inicializar conversacion {idx_conv} "
                             f"(intento {intento}/{args.retry}): {e}"
                         )
                     else:
                         print(
-                            f"[evaluacion] Error en pregunta {idx_preg} "
+                            f"[evaluacion] Error al inicializar conversacion {idx_conv} "
                             f"tras {args.retry} intento(s): {e}"
                         )
 
-            if not exito:
-                resultados_conv.append((str(ultimo_error), None))
+            if init_error is not None:
+                resultados_conv.extend([(str(init_error), None)] * len(preguntas))
+                guardar_snapshot(
+                    test_path=test_path,
+                    titulo=report_title,
+                    fecha_inicio=fecha_inicio,
+                    eval_path=eval_path,
+                    preguntas=preguntas,
+                    resultados=todos_resultados,
+                    configs=configs_usadas,
+                    total_conversaciones=len(sets_parametros),
+                    estado=estado,
+                )
+                if es_error_de_cuota_agotada(init_error):
+                    estado = "interrumpido"
+                    interrumpido_en = _interrupcion_siguiente_posicion(
+                        todos_resultados,
+                        len(sets_parametros),
+                        len(preguntas),
+                    )
+                    print(
+                        "[evaluacion] Cuota agotada detectada. "
+                        "Se guarda el parcial y se aborta la evaluacion."
+                    )
+                    guardar_snapshot(
+                        test_path=test_path,
+                        titulo=report_title,
+                        fecha_inicio=fecha_inicio,
+                        eval_path=eval_path,
+                        preguntas=preguntas,
+                        resultados=todos_resultados,
+                        configs=configs_usadas,
+                        total_conversaciones=len(sets_parametros),
+                        estado=estado,
+                        interrumpido_en=interrumpido_en,
+                    )
+                    sys.exit(2)
+                print(f"[evaluacion] Conversacion {idx_conv} finalizada con error de inicializacion.")
+                continue
 
-        todos_resultados.append(resultados_conv)
-        print(f"[evaluacion] Conversacion {idx_conv} finalizada.")
+            for idx_preg, pregunta in enumerate(preguntas, start=1):
+                print(f"[evaluacion] Pregunta {idx_preg}/{len(preguntas)}...")
+                exito = False
+                ultimo_error = None
 
-    print(f"\n[evaluacion] Generando reporte...")
-    contenido = generar_markdown(test_n, preguntas, todos_resultados, configs_usadas)
-    test_path.write_text(contenido, encoding="utf-8")
+                for intento in range(1, args.retry + 1):
+                    try:
+                        respuesta = service.query(pregunta)
+                        resultados_conv.append((None, respuesta))
+                        exito = True
+                        break
+                    except Exception as e:
+                        ultimo_error = e
+                        if es_error_de_cuota_agotada(e):
+                            print(
+                                f"[evaluacion] Cuota agotada en pregunta {idx_preg}; "
+                                "no se reintenta."
+                            )
+                            break
+                        if intento < args.retry:
+                            print(
+                                f"[evaluacion] Error en pregunta {idx_preg} "
+                                f"(intento {intento}/{args.retry}): {e}"
+                            )
+                        else:
+                            print(
+                                f"[evaluacion] Error en pregunta {idx_preg} "
+                                f"tras {args.retry} intento(s): {e}"
+                            )
+
+                if not exito:
+                    resultados_conv.append((str(ultimo_error), None))
+
+                guardar_snapshot(
+                    test_path=test_path,
+                    titulo=report_title,
+                    fecha_inicio=fecha_inicio,
+                    eval_path=eval_path,
+                    preguntas=preguntas,
+                    resultados=todos_resultados,
+                    configs=configs_usadas,
+                    total_conversaciones=len(sets_parametros),
+                    estado=estado,
+                )
+
+                if ultimo_error is not None and es_error_de_cuota_agotada(ultimo_error):
+                    estado = "interrumpido"
+                    interrumpido_en = _interrupcion_siguiente_posicion(
+                        todos_resultados,
+                        len(sets_parametros),
+                        len(preguntas),
+                    )
+                    print(
+                        "[evaluacion] Cuota agotada detectada. "
+                        "Se guarda el parcial y se aborta la evaluacion."
+                    )
+                    guardar_snapshot(
+                        test_path=test_path,
+                        titulo=report_title,
+                        fecha_inicio=fecha_inicio,
+                        eval_path=eval_path,
+                        preguntas=preguntas,
+                        resultados=todos_resultados,
+                        configs=configs_usadas,
+                        total_conversaciones=len(sets_parametros),
+                        estado=estado,
+                        interrumpido_en=interrumpido_en,
+                    )
+                    sys.exit(2)
+
+            print(f"[evaluacion] Conversacion {idx_conv} finalizada.")
+
+    except KeyboardInterrupt:
+        estado = "interrumpido"
+        interrumpido_en = _interrupcion_siguiente_posicion(
+            todos_resultados,
+            len(sets_parametros),
+            len(preguntas),
+        )
+        print("\n[evaluacion] Evaluacion interrumpida por el usuario. Guardando ultimo snapshot...")
+        guardar_snapshot(
+            test_path=test_path,
+            titulo=report_title,
+            fecha_inicio=fecha_inicio,
+            eval_path=eval_path,
+            preguntas=preguntas,
+            resultados=todos_resultados,
+            configs=configs_usadas,
+            total_conversaciones=len(sets_parametros),
+            estado=estado,
+            interrumpido_en=interrumpido_en,
+        )
+        print(f"[evaluacion] Reporte parcial guardado en: {test_path}")
+        sys.exit(130)
+
+    estado = "completado"
+    print(f"\n[evaluacion] Generando reporte final...")
+    guardar_snapshot(
+        test_path=test_path,
+        titulo=report_title,
+        fecha_inicio=fecha_inicio,
+        eval_path=eval_path,
+        preguntas=preguntas,
+        resultados=todos_resultados,
+        configs=configs_usadas,
+        total_conversaciones=len(sets_parametros),
+        estado=estado,
+    )
     print(f"[evaluacion] Reporte guardado en: {test_path}")
 
 

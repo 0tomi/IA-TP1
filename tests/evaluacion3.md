@@ -26,34 +26,31 @@
 - ¿Cómo se resuelve un modelo de Programación Lineal usando el método de Simplex en Excel?
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
-[Parametros 1]
-# Baseline: Temp 0.5, Prompt default, Chunks 512
-llm_provider = google
-llm_model = gemini-3.1-flash-lite-preview
-embedding_model = BAAI/bge-m3
-temperatura = 0.5
-chunk_size = 512
-chunk_overlap = 50
-chunking_technique = recursive
-retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
-refresh = true
-
-[Parametros 2]
-# Subimos temperatura a 1.0 (Sin tocar nada más)
+[Parametros 5]
+# TEST: System Prompt ABIERTO + Temperatura 1.0 + Chunks fragmentados (300/30)
+# Queremos ver si el modelo "rellena" los huecos del chunking malo con su conocimiento
 temperatura = 1.0
-
-[Parametros 3]
-# Temperatura 1.5 y Chunks grandes (1000/200) para contexto más amplio
-temperatura = 1.5
-chunk_size = 1000
-chunk_overlap = 200
+system_prompt = Sos un asistente académico experto. Usá el contexto proporcionado: {contexto}. Si la información es escasa, completá con tu conocimiento general de ingeniería pero aclaralo. Pregunta: {pregunta}
+chunk_size = 300
+chunk_overlap = 30
+chunking_technique = fixed_size_overlap
 refresh = true
 
-[Parametros 4]
-# Temperatura 2.0 (Caos controlado con prompt restrictivo por defecto)
+[Parametros 6]
+# Mismo prompt abierto pero con MMR para ver si la diversidad de fuentes ayuda
+retrieval_type = mmr
+top_k = 8
+
+[Parametros 7]
+# Subimos a 1.5 con el prompt abierto
+temperatura = 1.5
+
+[Parametros 8]
+# TEST: System Prompt EXTREMADAMENTE CERRADO + Temperatura 2.0
+# Buscamos ver si un prompt muy rígido puede contener el delirio de una temperatura tan alta
 temperatura = 2.0
-
-
-
+system_prompt = SOS UN ROBOT DE EXTRACCIÓN. PROHIBIDO AGREGAR COMENTARIOS. Si la respuesta no está LITERAL en el contexto, respondé: 'DATO NO ENCONTRADO'. No uses tu conocimiento previo. Contexto: {contexto}. Pregunta: {pregunta}
+chunk_size = 600
+chunk_overlap = 100
+chunking_technique = recursive
+refresh = true

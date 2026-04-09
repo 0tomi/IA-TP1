@@ -18,7 +18,7 @@
 - Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
 - ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
 
-# C) Preguntas de Borde
+# C) Preguntas de Límite
 
 - ¿Dónde puedo descargar la materia de Cálculo de 1er año?
 - El profesor Ing. Jorge L. Schmukler da clases en Bases de Datos Avanzadas, en Inteligencia Artificial y en Redes y Comunicaciones.
@@ -28,9 +28,9 @@
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
 [Parametros 1]
-llm_provider = ollama
-llm_model = llama3.1
-embedding_model = BAAI/bge-m3
+llm_provider = google
+llm_model = gemini-3.1-flash-lite-preview
+embedding_model = gemini-embedding-001
 chunk_size = 800
 chunk_overlap = 200
 chunking_technique = fixed_size_overlap

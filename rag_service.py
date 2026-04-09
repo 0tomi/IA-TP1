@@ -6,7 +6,14 @@ import time
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from carga import CargaConfig, construir_embeddings, COLLECTION_NAME, DATA_DIR, es_error_de_rate_limit
+from carga import (
+    CargaConfig,
+    construir_embeddings,
+    COLLECTION_NAME,
+    DATA_DIR,
+    es_error_de_cuota_agotada,
+    es_error_de_rate_limit,
+)
 from saneamiento.sanear import ejecutar_saneamiento
 from langchain_chroma import Chroma
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -237,6 +244,9 @@ class RAGService:
             try:
                 return self._ejecutar_query(user_query)
             except Exception as e:
+                if es_error_de_cuota_agotada(e):
+                    print("[rag] Cuota agotada detectada; no se reintenta la query.")
+                    raise
                 if not es_error_de_rate_limit(e) or attempt >= max_attempts:
                     raise
                 print(
