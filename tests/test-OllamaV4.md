@@ -7,6 +7,8 @@ _Ultima actualizacion: 2026-04-09 02:19:51_
 **Archivo de evaluacion:** `tests/evaluacionOllamaTop3.md`
 **Preguntas:** 18 | **Conversaciones planificadas:** 3 | **Conversaciones iniciadas:** 3 | **Preguntas procesadas:** 54
 
+**Nota de comparacion con V5:** en este informe se evaluaron las 3 configuraciones de `tests/evaluacionOllamaTop3.md`. Respecto de `V5`, no queda reflejado aqui ningun cambio de `system prompt`; la diferencia explicita en los artefactos de evaluacion es que `V5` agrega una cuarta configuracion: `recursive`, `chunk_size = 300`, `chunk_overlap = 50`, `retrieval_type = similarity_search`, `top_k = 5`, `max_context_chunks = 5`.
+
 **Criterio de puntaje:** 1 punto por respuesta correcta o abstencion correcta en preguntas de borde, 0.5 por respuesta parcial pero util y 0 por respuesta incorrecta, incompleta de forma critica o no sustentada por el contexto.
 
 ## Conversacion 1

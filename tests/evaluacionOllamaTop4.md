@@ -52,9 +52,6 @@ refresh = true
 
 [Parametros 3]
 # Tercer mejor grupo: recursive 500/100 + MMR
-chunking_technique = recursive
-chunk_size = 500
-chunk_overlap = 100
 retrieval_type = mmr
 top_k = 8
 max_context_chunks = 8
