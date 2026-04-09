@@ -321,7 +321,7 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_ca
         sha256 = calcular_sha256(pdf_path)
 
         # Chequeamos el cache del registro a ver si podemos skipear la extraccion
-        if nombre in registro and registro[nombre].get("sha256") == sha256:
+        if nombre in registro and registro[nombre].get("sha256") == sha256 and registro[nombre].get("cargado_en_chroma"):
             print(f"  [cache] {nombre}")
             salteados.append(nombre)
             _report(phase="saneamiento", total_files=total, files_processed=idx + 1, current_file=nombre, message=f"En caché: {nombre}")
