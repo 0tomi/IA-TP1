@@ -19,6 +19,7 @@ export default function SuggestedQuestions({ onSelect }) {
             className="suggested__card"
             onClick={() => onSelect(q.text)}
             style={{ animationDelay: `${i * 80}ms` }}
+            title={q.text}
           >
             <div className="suggested__card-border" />
             <div className="suggested__card-inner">

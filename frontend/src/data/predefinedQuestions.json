@@ -1,62 +1,92 @@
 [
   {
     "id": 1,
-    "text": "¿Cuáles son las materias de 4to año de Licenciatura en Sistemas de Información?",
-    "icon": "BookOpen"
-  },
-  {
-    "id": 2,
-    "text": "¿Qué horarios tienen las materias este cuatrimestre?",
-    "icon": "Clock"
-  },
-  {
-    "id": 3,
-    "text": "¿Cuáles son las correlatividades de las materias de 4to año?",
-    "icon": "GitBranch"
-  },
-  {
-    "id": 4,
-    "text": "¿Dónde puedo encontrar el plan de estudios actualizado?",
-    "icon": "FileText"
-  },
-  {
-    "id": 5,
-    "text": "¿Cuáles son los requisitos para regularizar Inteligencia Artificial?",
+    "text": "¿Cuáles son los contenidos de la materia Inteligencia Artificial?",
     "icon": "BrainCircuit"
   },
   {
-    "id": 6,
-    "text": "¿Qué profesores dictan las materias de 4to año?",
-    "icon": "Users"
-  },
-  {
-    "id": 7,
-    "text": "¿Cuáles son las fechas de exámenes finales?",
-    "icon": "CalendarDays"
-  },
-  {
-    "id": 8,
-    "text": "¿Qué proyectos finales se realizaron en años anteriores?",
+    "id": 2,
+    "text": "¿En qué materia se enseña el concepto de Lógica Difusa?",
     "icon": "Lightbulb"
   },
   {
+    "id": 3,
+    "text": "¿Cuál es el plan de estudios de Metodología de la Investigación? [Fuente: PROGRAMA- Metodología de la Investigación.docx.pdf]",
+    "icon": "FileText"
+  },
+  {
+    "id": 4,
+    "text": "En comunicaciones y Redes, ¿Cómo hago para quedar como alumno regular? [Fuente: Planificación 2025 - Comunicación y Redes.pdf]",
+    "icon": "UserCheck"
+  },
+  {
+    "id": 5,
+    "text": "¿Qué instancias de recuperación nos provee Investigación Operativa?",
+    "icon": "History"
+  },
+  {
+    "id": 6,
+    "text": "¿Para qué sirve el software TORA y qué módulos incluye según la cátedra?",
+    "icon": "Monitor"
+  },
+  {
+    "id": 7,
+    "text": "¿Qué profesor forma parte del equipo docente tanto en la materia de Bases de Datos Avanzadas como en la de Comunicaciones y Redes?",
+    "icon": "Users"
+  },
+  {
+    "id": 8,
+    "text": "¿Qué otra asignatura, además de la propia materia de Inteligencia Artificial, incluye explícitamente el impacto o uso de la 'Inteligencia artificial' (IA) dentro de sus unidades temáticas?",
+    "icon": "Brain"
+  },
+  {
     "id": 9,
-    "text": "¿Cómo me inscribo a las materias del próximo cuatrimestre?",
-    "icon": "ClipboardEdit"
+    "text": "Los requisitos para regularizar en Bases de Datos Avanzadas y en Redes y Comunicaciones, ¿Son iguales? ¿Qué diferencias tienen? [Fuentes: Planificación 2025 - Comunicación y Redes.pdf, BDA Planificacion.pdf]",
+    "icon": "GitMerge"
   },
   {
     "id": 10,
-    "text": "¿Qué recursos de la biblioteca puedo utilizar para estudiar?",
-    "icon": "Library"
+    "text": "¿Cuál es el porcentaje de asistencia a clases que exigen en común las materias de Investigación Operativa, Comunicaciones y Redes, y Metodología de la Investigación?",
+    "icon": "CalendarDays"
   },
   {
     "id": 11,
-    "text": "¿Cuál es el régimen de asistencia de la facultad?",
+    "text": "Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?",
     "icon": "ListChecks"
   },
   {
     "id": 12,
-    "text": "¿Cómo funciona el sistema de becas de la UADER?",
-    "icon": "GraduationCap"
+    "text": "¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?",
+    "icon": "Wrench"
+  },
+  {
+    "id": 13,
+    "text": "\"¿Dónde puedo descargar la materia de Cálculo de 1er año?\" (fuera del recorte de 4to)",
+    "icon": "Download"
+  },
+  {
+    "id": 14,
+    "text": "\"El profesor Ing. Jorge L. Schmukler da clases en Bases de Datos avanzadas, en Inteligencia artificial, y en Redes y Comunicaciones.\" (información errónea)",
+    "icon": "AlertTriangle"
+  },
+  {
+    "id": 15,
+    "text": "¿Cuál es el costo de la certificación oficial de Cisco que se menciona como opcional en la planificación? [ El PDF menciona IOs, pero no menciona costos ]",
+    "icon": "Banknote"
+  },
+  {
+    "id": 16,
+    "text": "Para la Promoción Directa, se exige la aprobación de la totalidad de los trabajos prácticos (Tp 1 al Tp 5). ¿Cuál es la calificación numérica mínima (escala 1-10 o 1-100) que debe obtenerse en cada TP individual para que se considere \"aprobado\"? [ Los tps se aprueban únicamente con aprobado ]",
+    "icon": "Award"
+  },
+  {
+    "id": 17,
+    "text": "¿Cómo se resuelve un modelo de Programación Lineal usando el método de Simplex en Excel?",
+    "icon": "Grid"
+  },
+  {
+    "id": 18,
+    "text": "¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?",
+    "icon": "Clock"
   }
 ]

@@ -66,7 +66,7 @@ def _init_worker():
     try:
         logger.info("Inicializando RAGService en background...")
         config = RAGServiceConfig()
-        _rag = RAGService(config, progress_callback=_progress_callback)
+        _rag = RAGService.create(config, progress_callback=_progress_callback)
         with _init_lock:
             _init_status = {"status": "ready", "phase": "ready", "message": "Servicio listo."}
         logger.info("RAGService listo.")
