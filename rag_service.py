@@ -76,7 +76,7 @@ class RAGServiceConfig:
     # Parámetros de carga/embedding
     chunk_size: int = 300
     chunk_overlap: int = 30
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gemini-embedding-001"
     chunking_technique: str = "fixed_size_overlap"
     embedding_batch_size: int = 20
     max_retries: int = 3
@@ -325,6 +325,7 @@ class RAGService:
                 chunks_found=chunks_found,
                 chunks_used=0,
                 chunk_details=[],
+                sources_used=[],
                 prompt_tokens=None,
                 completion_tokens=None,
                 total_tokens=None,
