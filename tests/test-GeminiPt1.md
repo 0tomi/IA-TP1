@@ -16,7 +16,6 @@ _Ultima actualizacion: 2026-04-08 22:36:56_
 |---|---|
 | top_k | 5 |
 | retrieval_type | similarity_search |
-| threshold | 0.5 |
 | max_context_chunks | 5 |
 | temperatura | 0.7 |
 | debug | False |
