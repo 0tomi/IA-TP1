@@ -25,3 +25,6 @@
     "model_id": "sentence-transformers/all-MiniLM-L6-v2"
   }
 ]
+
+Gemini Embedding 002
+gemini-embedding-2-preview 

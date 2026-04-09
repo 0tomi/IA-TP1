@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -24,24 +25,33 @@ OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_SYSTEM_PROMPT = (
     "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
     "ÚNICAMENTE en la información proporcionada en el Contexto a continuación.\n"
-    "ADVERTENCIA: El contexto puede contener fragmentos de diferentes materias ("
-    "esto ocurre por la búsqueda de similitud matemática). Debes IGNORAR los documentos "
-    "que NO correspondan a la asignatura o intención evidente del usuario.\n"
-    "Si no puedes responder la pregunta utilizando exclusivamente la información "
-    'relevante del Contexto, indica claramente: "No dispongo de información '
-    'en mis documentos para responder esta consulta." NO inventes.\n\n'
-    "IMPORTANTE: Al final de tu respuesta, en una línea aparte, indicá los índices "
-    "de los documentos del contexto que REALMENTE usaste para elaborar tu respuesta, "
-    "usando EXACTAMENTE este formato:\n"
-    "<<FUENTES: 0, 2, 3>>\n"
-    "Si no usaste ningún documento, escribí: <<FUENTES: >>\n\n"
+    "Puedes sintetizar y conectar información de varios fragmentos del Contexto para "
+    "construir una respuesta, siempre que cada afirmación esté sustentada por ese "
+    "Contexto.\n"
+    "Responde con voz directa y segura, como si dominaras el tema, pero sin salirte "
+    "jamás de la información disponible.\n"
+    "NO menciones el Contexto, los fragmentos recuperados, los documentos, ni expliques "
+    "tu proceso de búsqueda o validación, salvo que el usuario te lo pida explícitamente.\n"
+    "Si la evidencia alcanza para responder el núcleo de la pregunta, respóndelo sin "
+    "dudar ni pedir más información.\n"
+    "Si el Contexto permite responder solo una parte de la pregunta, responde esa parte "
+    "con claridad y aclara brevemente qué dato puntual falta o qué parte no está respaldada.\n"
+    "Si no puedes responder la pregunta del usuario utilizando exclusivamente la "
+    'información del Contexto, debes indicar claramente "No dispongo de información '
+    'en mis documentos para responder esta consulta."\n'
+    "Reserva esa frase solo para los casos en los que ni siquiera el núcleo de la "
+    "respuesta esté respaldado.\n"
+    "NO inventes respuestas, NO completes huecos con conocimiento externo y NO afirmes "
+    "que un dato existe si en el Contexto aparece incompleto, truncado o ambiguo.\n"
+    "Cuando respondas, prioriza ser preciso, citar condiciones o diferencias relevantes y "
+    "mantenerte dentro de lo que efectivamente dicen los fragmentos recuperados.\n"
+    "Evita muletillas como 'según el contexto', 'el documento dice', 'la información proporcionada' "
+    "o equivalentes.\n\n"
     "### CONTEXTO ###\n"
     "{contexto}\n\n"
     "### PREGUNTA DEL USUARIO ###\n"
     "{pregunta}\n"
 )
-
-_FUENTES_PATTERN = re.compile(r"<<FUENTES:\s*([\d,\s]*)>>")
 
 
 @dataclass
@@ -51,16 +61,16 @@ class RAGServiceConfig:
     retrieval_type: str = "similarity_search"  # similarity_search | mmr | threshold
     threshold: float = 0.5
     max_context_chunks: int = 5
-    temperatura: float = 0.7
+    temperatura: float = 1.0
     debug: bool = False
     llm_provider: str = "google"
     llm_model: str = "gemini-3.1-flash-lite-preview"
 
     # Parámetros de carga/embedding
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_size: int = 300
+    chunk_overlap: int = 30
     embedding_model: str = "gemini-embedding-001"
-    chunking_technique: str = "recursive"
+    chunking_technique: str = "fixed_size_overlap"
     embedding_batch_size: int = 20
     max_retries: int = 3
     retry_wait_seconds: int = 60
@@ -89,21 +99,9 @@ class RAGResponse:
     chunks_found: int
     chunks_used: int
     chunk_details: list[dict]
-    sources_used: list[dict]
     prompt_tokens: int | None
     completion_tokens: int | None
     total_tokens: int | None
-
-
-def _parse_cited_sources(text: str) -> tuple[str, list[int] | None]:
-    """Extract cited document indices from the LLM response and return clean text."""
-    match = _FUENTES_PATTERN.search(text)
-    if not match:
-        return text, None
-    indices_str = match.group(1).strip()
-    indices = [int(x.strip()) for x in indices_str.split(",") if x.strip().isdigit()] if indices_str else []
-    clean = text[: match.start()].rstrip()
-    return clean, indices
 
 
 def _guardar_last_data_process(config: RAGServiceConfig) -> None:
@@ -119,11 +117,11 @@ def _guardar_last_data_process(config: RAGServiceConfig) -> None:
         }, f, ensure_ascii=False, indent=2)
 
 
-def preparar_datos_rag(config: RAGServiceConfig, progress_callback=None) -> None:
+def preparar_datos_rag(config: RAGServiceConfig) -> None:
     # El saneamiento puede borrar /data, asi que soltamos cualquier cliente
     # de Chroma abierto en este proceso antes de tocar el storage.
     RAGService.reset()
-    ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh, progress_callback=progress_callback)
+    ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh)
     _guardar_last_data_process(config)
 
 
@@ -137,11 +135,11 @@ class RAGService:
         return cls._instance
 
     @classmethod
-    def create(cls, config: RAGServiceConfig, progress_callback=None) -> "RAGService":
-        preparar_datos_rag(config, progress_callback=progress_callback)
-        return cls(config, progress_callback=progress_callback)
+    def create(cls, config: RAGServiceConfig) -> "RAGService":
+        preparar_datos_rag(config)
+        return cls(config)
 
-    def __init__(self, config: RAGServiceConfig, progress_callback=None):
+    def __init__(self, config: RAGServiceConfig):
         runtime_config = self._runtime_config(config)
         if self._initialized:
             if self.config != runtime_config:
@@ -155,9 +153,6 @@ class RAGService:
 
         load_dotenv()
         self._validar_llm_config()
-
-        if progress_callback:
-            progress_callback({"phase": "vectorstore", "message": "Cargando modelo de embeddings..."})
 
         # El modelo ya fue descargado durante el saneamiento. Suprimimos las
         # progress bars de huggingface_hub para que la segunda carga (desde
@@ -183,6 +178,9 @@ class RAGService:
         elif config.retrieval_type == "threshold":
             search_type = "similarity_score_threshold"
             search_kwargs["score_threshold"] = config.threshold
+
+        self._search_type = search_type
+        self._search_kwargs = search_kwargs
 
         self._retriever = self._vectorstore.as_retriever(
             search_type=search_type,
@@ -281,7 +279,7 @@ class RAGService:
                 time.sleep(self.config.retry_wait_seconds)
 
     def _ejecutar_query(self, user_query: str) -> RAGResponse:
-        docs = self._retriever.invoke(user_query)
+        docs = self._recuperar_documentos(user_query)
 
         chunks_found = len(docs)
         docs_contexto = docs[: self.config.max_context_chunks]
@@ -305,19 +303,17 @@ class RAGService:
                 chunks_found=chunks_found,
                 chunks_used=0,
                 chunk_details=[],
-                sources_used=[],
                 prompt_tokens=None,
                 completion_tokens=None,
                 total_tokens=None,
             )
 
         bloques_texto = []
-        for i, d in enumerate(docs_contexto):
+        for d in docs_contexto:
             meta = d.metadata
             bloques_texto.append(
-                f"[Documento {i}]: {meta.get('documento', '?')}\n"
+                f"Documento: {meta.get('documento', '?')}\n"
                 f"Sección: {meta.get('seccion', '?')}\n"
-                f"Página: {meta.get('pagina', '?')}\n"
                 f"Contenido:\n{d.page_content}"
             )
         contexto_str = "\n\n---\n\n".join(bloques_texto)
@@ -336,15 +332,6 @@ class RAGService:
                 (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
                 "",
             )
-
-        # Parsear índices de fuentes citadas por el LLM y limpiar el texto
-        clean_answer, cited_indices = _parse_cited_sources(content)
-        if cited_indices is not None:
-            valid_indices = set(cited_indices) & {d["index"] for d in chunk_details}
-            sources_used = [d for d in chunk_details if d["index"] in valid_indices]
-        else:
-            # Fallback: si el LLM no incluyó la marca, devolver todas
-            sources_used = chunk_details
 
         # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
         prompt_tokens = None
@@ -365,15 +352,56 @@ class RAGService:
                 total_tokens = getattr(usage, "total_tokens", None)
 
         return RAGResponse(
-            answer=clean_answer,
+            answer=content,
             chunks_found=chunks_found,
             chunks_used=chunks_used,
             chunk_details=chunk_details,
-            sources_used=sources_used,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
         )
+
+    @staticmethod
+    def _normalizar_texto(texto: str) -> str:
+        texto = unicodedata.normalize("NFKD", texto)
+        texto = "".join(char for char in texto if not unicodedata.combining(char))
+        return texto.lower()
+
+    def _inferir_materia_desde_query(self, user_query: str) -> str | None:
+        normalized_query = self._normalizar_texto(user_query)
+        normalized_query = re.sub(r"\s+", " ", normalized_query)
+
+        aliases = {
+            "Inteligencia Artificial": ["inteligencia artificial", "ia"],
+            "Investigación Operativa": ["investigacion operativa"],
+            "Metodología de la Investigación": ["metodologia de la investigacion", "metodologia"],
+            "Comunicacion y Redes": ["comunicaciones y redes", "comunicacion y redes", "redes y comunicaciones"],
+            "Bases de Datos Avanzadas": ["bases de datos avanzadas", "bda"],
+            "Informática y Recursos Humanos": ["informatica y recursos humanos", "informática y recursos humanos", "rrhh"],
+        }
+
+        matches = []
+        for materia, patterns in aliases.items():
+            if any(pattern in normalized_query for pattern in patterns):
+                matches.append(materia)
+
+        return matches[0] if len(matches) == 1 else None
+
+    def _recuperar_documentos(self, user_query: str):
+        inferred_materia = self._inferir_materia_desde_query(user_query)
+        if not inferred_materia:
+            return self._retriever.invoke(user_query)
+
+        search_kwargs = {**self._search_kwargs, "filter": {"materia": inferred_materia}}
+        filtered_retriever = self._vectorstore.as_retriever(
+            search_type=self._search_type,
+            search_kwargs=search_kwargs,
+        )
+        docs = filtered_retriever.invoke(user_query)
+
+        if docs:
+            return docs
+        return self._retriever.invoke(user_query)
 
     @classmethod
     def reset(cls):
