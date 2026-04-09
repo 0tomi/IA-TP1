@@ -34,18 +34,8 @@ embedding_model = gemini-embedding-001
 chunk_size = 800
 chunk_overlap = 200
 chunking_technique = fixed_size_overlap
-retrieval_type = similarity_search
+retrieval_type = threshold
+threshold = 0.5
 top_k = 5
 max_context_chunks = 5
 refresh = true
-
-[Parametros 2]
-retrieval_type = mmr
-
-[Parametros 3]
-retrieval_type = threshold
-threshold = 0.7
-
-[Parametros 4]
-retrieval_type = threshold
-threshold = 0.5
