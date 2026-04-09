@@ -64,6 +64,62 @@ RE_URL_PEGADA = re.compile(r'(?<=[0-9A-Za-zÁÉÍÓÚÑÜáéíóúñü])(?=(?:h
 # E.g. "HolaMundo" -> "Hola Mundo".
 # El {2,} es para no romper siglas tipo "iPhone" o "macOS".
 RE_PALABRAS_PEGADAS = re.compile(r'([a-záéíóúñü])([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,})')
+RE_FINAL_PUNTUACION_FUERTE = re.compile(r'[\.!\?:…»"\'\)\]]$')
+RE_INICIO_ESTRUCTURAL = re.compile(
+    r'^(?:[-*]|\d+(?:\.\d+)*[\.)]?|[IVXLCM]+[\.)]?|Cap[ií]tulo\b|Unidad\b|Tema\b|M[oó]dulo\b|Secci[oó]n\b)',
+    flags=re.IGNORECASE,
+)
+
+
+def _es_linea_estructural(linea: str) -> bool:
+    if not linea:
+        return False
+    if RE_INICIO_ESTRUCTURAL.match(linea):
+        return True
+
+    palabras = linea.split()
+    if linea.isupper() and len(palabras) <= 6:
+        return True
+    if linea.endswith(':') and len(palabras) <= 10:
+        return True
+    return False
+
+
+def _debe_unir_lineas(linea_anterior: str, linea_actual: str) -> bool:
+    if not linea_anterior or not linea_actual:
+        return False
+    if RE_FINAL_PUNTUACION_FUERTE.search(linea_anterior):
+        return False
+    if _es_linea_estructural(linea_actual):
+        return False
+    return True
+
+
+def _reconstruir_lineas_quebradas(texto: str) -> str:
+    paginas_reconstruidas = []
+
+    for pagina in texto.split("\f"):
+        lineas_reconstruidas: list[str] = []
+
+        for raw_line in pagina.split("\n"):
+            linea = raw_line.strip()
+
+            if not linea:
+                lineas_reconstruidas.append("")
+                continue
+
+            if not lineas_reconstruidas or not lineas_reconstruidas[-1]:
+                lineas_reconstruidas.append(linea)
+                continue
+
+            if _debe_unir_lineas(lineas_reconstruidas[-1], linea):
+                lineas_reconstruidas[-1] = f"{lineas_reconstruidas[-1]} {linea}"
+            else:
+                lineas_reconstruidas.append(linea)
+
+        paginas_reconstruidas.append("\n".join(lineas_reconstruidas))
+
+    return "\f".join(paginas_reconstruidas)
 
 def calcular_sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -113,9 +169,10 @@ def sanear(texto: str) -> str:
     # 2. Arreglo de estructura y saltos de linea random de pypdf
     texto = RE_PALABRAS_PEGADAS.sub(r'\1 \2', texto)
 
-    # A veces quedan saltos de linea cortando oraciones a la mitad
-    texto = re.sub(r'(?<=[a-záéíóúñü,;])\n \n(?=[a-záéíóúñüA-ZÁÉÍÓÚÑÜ])', ' ', texto)
-    texto = re.sub(r'(?<=[a-záéíóúñü,;])\n(?=[a-záéíóúñü])', ' ', texto)
+    # A veces quedan saltos de linea cortando oraciones a la mitad. Si la linea
+    # anterior no cierra una idea fuerte, la rearmamos incluso si la siguiente
+    # arranca con mayuscula.
+    texto = _reconstruir_lineas_quebradas(texto)
 
     # 3. Trim general y colapso de whitespaces
     texto = re.sub(r'[^\S\n\f]+', ' ', texto)           # espacios multiples a uno solo (preserva \f)

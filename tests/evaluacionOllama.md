@@ -31,7 +31,7 @@
 llm_provider = ollama
 llm_model = llama3.1
 embedding_model = BAAI/bge-m3
-temperatura = 0.5
+temperatura = 1.0
 chunk_size = 512
 chunk_overlap = 100
 chunking_technique = recursive
@@ -45,15 +45,16 @@ retrieval_type = mmr
 
 [Parametros 3]
 retrieval_type = threshold
-threshold = 0.6
+threshold = 0.3
 
 [Parametros 3]
-# Temperatura 1.5 y Chunks grandes (1000/200) para contexto más amplio
-temperatura = 1.5
+# Chunks grandes (1000/200) para contexto más amplio
+temperatura = 1.0
 chunking_technique = paragraph_custom
 chunk_size = 1000
 chunk_overlap = 200
 refresh = true
+retrieval_type = mmr
 
 [Parametros 4]
 # Temperatura 2.0 (Caos controlado con prompt restrictivo por defecto)
