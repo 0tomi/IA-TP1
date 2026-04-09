@@ -27,44 +27,6 @@
 - ¿Cómo se resuelve un modelo de Programación Lineal usando el método de Simplex en Excel?
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
-[Parametros 1]
-llm_provider = google
-llm_model = gemini-3.1-flash-lite-preview
-embedding_model = gemini-embedding-001
-chunk_size = 800
-chunk_overlap = 200
-chunking_technique = fixed_size_overlap
-retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
-refresh = true
-
-[Parametros 2]
-retrieval_type = mmr
-
-[Parametros 3]
-retrieval_type = threshold
-threshold = 0.7
-
-[Parametros 4]
-retrieval_type = threshold
-threshold = 0.5
-
-[Parametros 5]
-chunk_size = 1024
-chunking_technique = recursive
-retrieval_type = similarity_search
-top_k = 7
-max_context_chunks = 5
-refresh = true
-
-[Parametros 6]
-retrieval_type = mmr
-
-[Parametros 7]
-retrieval_type = threshold
-threshold = 0.5
-
 [Parametros 8]
 chunk_size = 1024
 chunking_technique = paragraph_custom
