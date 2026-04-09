@@ -41,6 +41,17 @@ TITLE_STOPWORDS = {
     "a", "al", "con", "de", "del", "e", "el", "en", "la", "las",
     "los", "o", "para", "por", "sin", "u", "y",
 }
+HEADING_CONTINUATION_WORDS = {
+    "a", "al", "con", "de", "del", "e", "el", "en", "la", "las",
+    "los", "o", "para", "por", "sin", "u", "y",
+}
+NOISY_SECTION_TITLES = {
+    "dicho",
+    "estas",
+    "santa",
+    "tamara",
+    "visto",
+}
 
 
 @dataclass
@@ -174,11 +185,52 @@ def _combinar_titulos(base: str, nuevo: str) -> str:
     return f"{base} | {nuevo}"
 
 
+def _siguiente_linea_no_vacia(lines: list[str], index: int) -> str:
+    for candidate in lines[index + 1:]:
+        normalized = _normalizar_linea(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _primer_token(texto: str) -> str:
+    match = re.match(r'^[^\w]*([A-Za-zÁÉÍÓÚÑÜáéíóúñü]+)', texto)
+    return match.group(1).lower() if match else ""
+
+
+def _debe_degradar_titulo(title: str, next_line: str) -> bool:
+    title = _normalizar_linea(title)
+    next_line = _normalizar_linea(next_line)
+
+    if not title or title == DEFAULT_SECTION_TITLE:
+        return False
+    if TITLE_STRUCTURAL_PREFIX.match(title) or title.endswith(":") or "|" in title:
+        return False
+
+    words = title.split()
+    if len(words) != 1:
+        return False
+
+    if words[0].lower() in NOISY_SECTION_TITLES:
+        return True
+
+    next_token = _primer_token(next_line)
+    if next_token in HEADING_CONTINUATION_WORDS:
+        return False
+
+    stripped = next_line.lstrip(" .,:;-)")
+    if stripped and stripped[0].islower():
+        return True
+
+    return False
+
+
 def segmentar_pagina_en_secciones(page_text: str, current_title: str) -> tuple[list[tuple[str, str]], str]:
     lines = page_text.split("\n")
     sections: list[tuple[str, str]] = []
     current_lines: list[str] = []
     title_pending_without_body = False
+    last_valid_title = current_title if current_title != DEFAULT_SECTION_TITLE else ""
 
     def flush_section() -> None:
         content = "\n".join(current_lines).strip()
@@ -188,14 +240,28 @@ def segmentar_pagina_en_secciones(page_text: str, current_title: str) -> tuple[l
     for index, raw_line in enumerate(lines):
         normalized_line = _normalizar_linea(raw_line)
         if _es_titulo_en_contexto(lines, index):
+            next_line = _siguiente_linea_no_vacia(lines, index)
+            degrade_title = _debe_degradar_titulo(normalized_line, next_line)
+            resolved_title = last_valid_title or current_title or DEFAULT_SECTION_TITLE
+
             if current_lines:
                 flush_section()
                 current_lines = []
-                current_title = normalized_line
+                if not degrade_title:
+                    current_title = normalized_line
+                    last_valid_title = current_title
+                else:
+                    current_title = resolved_title
             elif title_pending_without_body:
-                current_title = _combinar_titulos(current_title, normalized_line)
+                if not degrade_title:
+                    current_title = _combinar_titulos(current_title, normalized_line)
+                    last_valid_title = current_title
             else:
-                current_title = normalized_line
+                if not degrade_title:
+                    current_title = normalized_line
+                    last_valid_title = current_title
+                else:
+                    current_title = resolved_title
 
             title_pending_without_body = True
             continue

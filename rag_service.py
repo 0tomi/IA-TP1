@@ -2,7 +2,9 @@ from dataclasses import dataclass, field, replace
 from dotenv import load_dotenv
 import json
 import os
+import re
 import time
+import unicodedata
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -23,10 +25,28 @@ OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_SYSTEM_PROMPT = (
     "Eres un asistente diseñado estrictamente para responder a preguntas basándote "
     "ÚNICAMENTE en la información proporcionada en el Contexto a continuación.\n"
+    "Puedes sintetizar y conectar información de varios fragmentos del Contexto para "
+    "construir una respuesta, siempre que cada afirmación esté sustentada por ese "
+    "Contexto.\n"
+    "Responde con voz directa y segura, como si dominaras el tema, pero sin salirte "
+    "jamás de la información disponible.\n"
+    "NO menciones el Contexto, los fragmentos recuperados, los documentos, ni expliques "
+    "tu proceso de búsqueda o validación, salvo que el usuario te lo pida explícitamente.\n"
+    "Si la evidencia alcanza para responder el núcleo de la pregunta, respóndelo sin "
+    "dudar ni pedir más información.\n"
+    "Si el Contexto permite responder solo una parte de la pregunta, responde esa parte "
+    "con claridad y aclara brevemente qué dato puntual falta o qué parte no está respaldada.\n"
     "Si no puedes responder la pregunta del usuario utilizando exclusivamente la "
     'información del Contexto, debes indicar claramente "No dispongo de información '
-    'en mis documentos para responder esta consulta." NO inventes respuestas, ni uses '
-    "conocimientos externos bajo ninguna circunstancia.\n\n"
+    'en mis documentos para responder esta consulta."\n'
+    "Reserva esa frase solo para los casos en los que ni siquiera el núcleo de la "
+    "respuesta esté respaldado.\n"
+    "NO inventes respuestas, NO completes huecos con conocimiento externo y NO afirmes "
+    "que un dato existe si en el Contexto aparece incompleto, truncado o ambiguo.\n"
+    "Cuando respondas, prioriza ser preciso, citar condiciones o diferencias relevantes y "
+    "mantenerte dentro de lo que efectivamente dicen los fragmentos recuperados.\n"
+    "Evita muletillas como 'según el contexto', 'el documento dice', 'la información proporcionada' "
+    "o equivalentes.\n\n"
     "### CONTEXTO ###\n"
     "{contexto}\n\n"
     "### PREGUNTA DEL USUARIO ###\n"
@@ -41,16 +61,16 @@ class RAGServiceConfig:
     retrieval_type: str = "similarity_search"  # similarity_search | mmr | threshold
     threshold: float = 0.5
     max_context_chunks: int = 5
-    temperatura: float = 0.7
+    temperatura: float = 1.0
     debug: bool = False
     llm_provider: str = "google"
     llm_model: str = "gemini-3.1-flash-lite-preview"
 
     # Parámetros de carga/embedding
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_size: int = 300
+    chunk_overlap: int = 30
     embedding_model: str = "gemini-embedding-001"
-    chunking_technique: str = "recursive"
+    chunking_technique: str = "fixed_size_overlap"
     embedding_batch_size: int = 20
     max_retries: int = 3
     retry_wait_seconds: int = 60
@@ -159,6 +179,9 @@ class RAGService:
             search_type = "similarity_score_threshold"
             search_kwargs["score_threshold"] = config.threshold
 
+        self._search_type = search_type
+        self._search_kwargs = search_kwargs
+
         self._retriever = self._vectorstore.as_retriever(
             search_type=search_type,
             search_kwargs=search_kwargs,
@@ -256,7 +279,7 @@ class RAGService:
                 time.sleep(self.config.retry_wait_seconds)
 
     def _ejecutar_query(self, user_query: str) -> RAGResponse:
-        docs = self._retriever.invoke(user_query)
+        docs = self._recuperar_documentos(user_query)
 
         chunks_found = len(docs)
         docs_contexto = docs[: self.config.max_context_chunks]
@@ -337,6 +360,48 @@ class RAGService:
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
         )
+
+    @staticmethod
+    def _normalizar_texto(texto: str) -> str:
+        texto = unicodedata.normalize("NFKD", texto)
+        texto = "".join(char for char in texto if not unicodedata.combining(char))
+        return texto.lower()
+
+    def _inferir_materia_desde_query(self, user_query: str) -> str | None:
+        normalized_query = self._normalizar_texto(user_query)
+        normalized_query = re.sub(r"\s+", " ", normalized_query)
+
+        aliases = {
+            "Inteligencia Artificial": ["inteligencia artificial", "ia"],
+            "Investigación Operativa": ["investigacion operativa"],
+            "Metodología de la Investigación": ["metodologia de la investigacion", "metodologia"],
+            "Comunicacion y Redes": ["comunicaciones y redes", "comunicacion y redes", "redes y comunicaciones"],
+            "Bases de Datos Avanzadas": ["bases de datos avanzadas", "bda"],
+            "Informática y Recursos Humanos": ["informatica y recursos humanos", "informática y recursos humanos", "rrhh"],
+        }
+
+        matches = []
+        for materia, patterns in aliases.items():
+            if any(pattern in normalized_query for pattern in patterns):
+                matches.append(materia)
+
+        return matches[0] if len(matches) == 1 else None
+
+    def _recuperar_documentos(self, user_query: str):
+        inferred_materia = self._inferir_materia_desde_query(user_query)
+        if not inferred_materia:
+            return self._retriever.invoke(user_query)
+
+        search_kwargs = {**self._search_kwargs, "filter": {"materia": inferred_materia}}
+        filtered_retriever = self._vectorstore.as_retriever(
+            search_type=self._search_type,
+            search_kwargs=search_kwargs,
+        )
+        docs = filtered_retriever.invoke(user_query)
+
+        if docs:
+            return docs
+        return self._retriever.invoke(user_query)
 
     @classmethod
     def reset(cls):

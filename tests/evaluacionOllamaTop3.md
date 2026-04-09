@@ -27,55 +27,35 @@
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
 [Parametros 1]
-# Baseline actual: recursive 512/100 + similarity
+# Mejor score observado: fixed chunks chicos + similarity
 llm_provider = ollama
 llm_model = llama3.1
 embedding_model = BAAI/bge-m3
 temperatura = 1.0
-chunk_size = 512
-chunk_overlap = 100
-chunking_technique = recursive
+chunk_size = 300
+chunk_overlap = 30
+chunking_technique = fixed_size_overlap
 retrieval_type = similarity_search
 top_k = 5
 max_context_chunks = 5
 refresh = true
 
 [Parametros 2]
-# Baseline con mejor retrieval: recursive 512/100 + MMR
-retrieval_type = mmr
-top_k = 8
-max_context_chunks = 8
-
-[Parametros 3]
-# Fixed chunks chicos, que en reportes viejos dieron buena señal
-chunking_technique = fixed_size_overlap
-chunk_size = 300
-chunk_overlap = 50
+# Segundo mejor score: recursive 512/100 + similarity
+chunking_technique = recursive
+chunk_size = 512
+chunk_overlap = 100
 retrieval_type = similarity_search
 top_k = 5
+max_context_chunks = 5
 refresh = true
 
-[Parametros 4]
-# Fixed chunks chicos + MMR/top_k altos
-retrieval_type = mmr
-top_k = 8
-
-[Parametros 5]
-# Variante pedida: recursive 500/100 + MMR
+[Parametros 3]
+# Tercer mejor grupo: recursive 500/100 + MMR
 chunking_technique = recursive
 chunk_size = 500
 chunk_overlap = 100
 retrieval_type = mmr
 top_k = 8
+max_context_chunks = 8
 refresh = true
-
-[Parametros 6]
-# Variante cercana a la mejor corrida vieja con recursive
-chunking_technique = recursive
-chunk_size = 600
-chunk_overlap = 100
-retrieval_type = mmr
-top_k = 8
-refresh = true
-
-
