@@ -28,9 +28,9 @@
 
 [Parametros 1]
 # Mejor score observado: fixed chunks chicos + similarity
-llm_provider = ollama
-llm_model = llama3.1
-embedding_model = BAAI/bge-m3
+llm_provider = google
+llm_model = gemini-2.5-flash
+embedding_model = gemini-embedding-2-preview
 temperatura = 1.0
 chunk_size = 300
 chunk_overlap = 30
