@@ -29,6 +29,19 @@ LOCAL_MODELS = {
     },
 }
 
+DEFAULT_SECTION_TITLE = "Intro / Sin título"
+TITLE_MAX_LEN = 80
+TITLE_MAX_WORDS = 10
+TITLE_ALLOWED_CHARS = re.compile(r'^[\w\s\-:,\.()%/]+$')
+TITLE_STRUCTURAL_PREFIX = re.compile(
+    r'^(?:\d+(?:\.\d+)*[\.)]?|[IVXLCM]+[\.)]?|Cap[ií]tulo|Unidad|Tema|M[oó]dulo|Secci[oó]n|Parte|Anexo)\b',
+    flags=re.IGNORECASE,
+)
+TITLE_STOPWORDS = {
+    "a", "al", "con", "de", "del", "e", "el", "en", "la", "las",
+    "los", "o", "para", "por", "sin", "u", "y",
+}
+
 
 @dataclass
 class CargaConfig:
@@ -91,75 +104,145 @@ def parsear_toon(toon_str: str) -> dict:
     }
 
 
+def _normalizar_linea(linea: str) -> str:
+    return re.sub(r'\s+', ' ', linea.strip())
+
+
+def _es_titulo_generico(linea: str) -> bool:
+    palabras = re.findall(r'[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9]+', linea)
+    if not palabras or len(palabras) > TITLE_MAX_WORDS:
+        return False
+
+    palabras_contenido = 0
+    for palabra in palabras:
+        if palabra.lower() in TITLE_STOPWORDS:
+            continue
+        if palabra.isupper() or palabra[0].isupper():
+            palabras_contenido += 1
+            continue
+        return False
+
+    return palabras_contenido >= 2 or (palabras_contenido == 1 and len(palabras) == 1)
+
+
+def _es_candidato_titulo_contextual(linea: str) -> bool:
+    if not linea or len(linea) > TITLE_MAX_LEN:
+        return False
+    if linea[0].islower() or linea.endswith((".", "!", "?")):
+        return False
+    if not TITLE_ALLOWED_CHARS.match(linea):
+        return False
+    if re.search(r'\b(?:https?://|www\.)', linea, flags=re.IGNORECASE):
+        return False
+    return len(linea.split()) <= TITLE_MAX_WORDS
+
+
 def es_titulo(linea: str) -> bool:
-    linea = linea.strip()
-    if not linea or len(linea) >= 80:
+    linea = _normalizar_linea(linea)
+    if not _es_candidato_titulo_contextual(linea):
         return False
-    if linea[0].islower():
+    if TITLE_STRUCTURAL_PREFIX.match(linea) or linea.isupper():
+        return True
+    if linea.endswith(":"):
+        return len(linea.split()) <= TITLE_MAX_WORDS
+    return _es_titulo_generico(linea)
+
+
+def _es_titulo_en_contexto(lines: list[str], index: int) -> bool:
+    linea = _normalizar_linea(lines[index])
+    if not _es_candidato_titulo_contextual(linea):
         return False
-    patron = r'^(?:\d+[\.\)]\s*|Cap[ií]tulo\s+|Unidad\s+|Tema\s+)?[A-ZÁÉÍÓÚÑÜ][\w\s\-:,\.]{2,78}$'
-    return bool(re.match(patron, linea))
+
+    if es_titulo(linea):
+        return True
+
+    prev_line = _normalizar_linea(lines[index - 1]) if index > 0 else ""
+    next_line = _normalizar_linea(lines[index + 1]) if index + 1 < len(lines) else ""
+
+    if TITLE_STRUCTURAL_PREFIX.match(prev_line):
+        return True
+    if len(linea.split()) >= 3 and (not prev_line or not next_line):
+        return True
+    return False
 
 
-def detectar_titulos_en_pagina(page_text: str, current_title: str) -> tuple[list[tuple[int, str]], str]:
-    offsets = [(0, current_title)]
-    cursor = 0
-
-    for line in page_text.splitlines(keepends=True):
-        line_sin_nl = line.rstrip("\n")
-        if es_titulo(line_sin_nl):
-            current_title = line_sin_nl.strip()
-            offsets.append((cursor, current_title))
-        cursor += len(line)
-
-    return offsets, current_title
+def _combinar_titulos(base: str, nuevo: str) -> str:
+    if not base or base == DEFAULT_SECTION_TITLE:
+        return nuevo
+    if nuevo in base:
+        return base
+    return f"{base} | {nuevo}"
 
 
-def obtener_titulo_por_offset(offsets: list[tuple[int, str]], chunk_start: int) -> str:
-    titulo = offsets[0][1]
-    for offset, current_title in offsets:
-        if offset > chunk_start:
-            break
-        titulo = current_title
-    return titulo
+def segmentar_pagina_en_secciones(page_text: str, current_title: str) -> tuple[list[tuple[str, str]], str]:
+    lines = page_text.split("\n")
+    sections: list[tuple[str, str]] = []
+    current_lines: list[str] = []
+    title_pending_without_body = False
+
+    def flush_section() -> None:
+        content = "\n".join(current_lines).strip()
+        if content:
+            sections.append((current_title, content))
+
+    for index, raw_line in enumerate(lines):
+        normalized_line = _normalizar_linea(raw_line)
+        if _es_titulo_en_contexto(lines, index):
+            if current_lines:
+                flush_section()
+                current_lines = []
+                current_title = normalized_line
+            elif title_pending_without_body:
+                current_title = _combinar_titulos(current_title, normalized_line)
+            else:
+                current_title = normalized_line
+
+            title_pending_without_body = True
+            continue
+
+        current_lines.append(raw_line)
+        if normalized_line:
+            title_pending_without_body = False
+
+    flush_section()
+    return sections, current_title
+
+
+def construir_contenido_enriquecido(chunk: str, materia: str, seccion: str) -> str:
+    prefijo = [f"Materia: {materia}"]
+    if seccion:
+        prefijo.append(f"Sección: {seccion}")
+
+    chunk = chunk.strip()
+    encabezado = "\n".join(prefijo)
+    return f"{encabezado}\n\n{chunk}" if chunk else encabezado
 
 
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
-        separators=["\n\n", "\n", ". ", " ", ""],
+        # En PDFs extraídos quedan muchos saltos de línea residuales. Conviene
+        # priorizar cierres más semánticos antes de cortar por maquetado crudo.
+        separators=["\n\n", ". ", "; ", ": ", "\n", " ", ""],
     )
 
     documents = []
     chunk_idx = 0
 
-    current_title = "Intro / Sin título"  # persiste entre páginas
+    current_title = DEFAULT_SECTION_TITLE  # persiste entre páginas
+    materia = base_metadata.get("materia", "General")
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
 
-        sections = []
-        lines = page_text.split("\n")
-        current_lines = []
-
-        for line in lines:
-            if es_titulo(line):
-                if current_lines:
-                    sections.append((current_title, "\n".join(current_lines)))
-                current_title = line.strip()
-                current_lines = [line]
-            else:
-                current_lines.append(line)
-
-        if current_lines:
-            sections.append((current_title, "\n".join(current_lines)))
+        sections, current_title = segmentar_pagina_en_secciones(page_text, current_title)
 
         for title, content in sections:
             for chunk in splitter.split_text(content):
                 documents.append(Document(
-                    page_content=chunk,
+                    page_content=construir_contenido_enriquecido(chunk, materia, title),
                     metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx},
                 ))
                 chunk_idx += 1
@@ -175,69 +258,64 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     )
     documents = []
     chunk_idx = 0
-    current_title = "Intro / Sin título"
+    current_title = DEFAULT_SECTION_TITLE
+    materia = base_metadata.get("materia", "General")
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
 
-        offsets, current_title = detectar_titulos_en_pagina(page_text, current_title)
-        search_from = 0
+        sections, current_title = segmentar_pagina_en_secciones(page_text, current_title)
 
-        for chunk in splitter.split_text(page_text):
-            chunk_start = page_text.find(chunk, search_from)
-            if chunk_start == -1:
-                chunk_start = page_text.find(chunk)
-            if chunk_start == -1:
-                chunk_start = search_from
-
-            documents.append(Document(
-                page_content=chunk,
-                metadata={
-                    **base_metadata,
-                    "seccion": obtener_titulo_por_offset(offsets, chunk_start),
-                    "pagina": page_num,
-                    "chunk_index": chunk_idx,
-                },
-            ))
-            chunk_idx += 1
-            search_from = max(chunk_start + max(len(chunk) - config.chunk_overlap, 1), 0)
+        for title, content in sections:
+            for chunk in splitter.split_text(content):
+                documents.append(Document(
+                    page_content=construir_contenido_enriquecido(chunk, materia, title),
+                    metadata={
+                        **base_metadata,
+                        "seccion": title,
+                        "pagina": page_num,
+                        "chunk_index": chunk_idx,
+                    },
+                ))
+                chunk_idx += 1
     return documents
 
 
 def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     documents = []
     chunk_index = 0
-    current_section = ""  # persiste entre páginas
+    current_section = DEFAULT_SECTION_TITLE  # persiste entre páginas
+    split_parrafos = re.compile(r'\n\s*\n+')
+    materia = base_metadata.get("materia", "General")
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
 
-        for paragraph in page_text.split("\n\n"):
-            paragraph = paragraph.strip()
-            if not paragraph:
-                continue
+        sections, current_section = segmentar_pagina_en_secciones(page_text, current_section)
 
-            if es_titulo(paragraph):
-                current_section = paragraph
-                continue
+        for title, content in sections:
+            for paragraph in split_parrafos.split(content):
+                paragraph = paragraph.strip()
+                if not paragraph:
+                    continue
 
-            if len(paragraph) <= config.chunk_size:
-                documents.append(Document(
-                    page_content=paragraph,
-                    metadata={**base_metadata, "seccion": current_section, "pagina": page_num, "chunk_index": chunk_index},
-                ))
-                chunk_index += 1
-            else:
-                # Hard-cut into pieces of chunk_size, no overlap
-                for start in range(0, len(paragraph), config.chunk_size):
-                    piece = paragraph[start:start + config.chunk_size]
+                if len(paragraph) <= config.chunk_size:
                     documents.append(Document(
-                        page_content=piece,
-                        metadata={**base_metadata, "seccion": current_section, "pagina": page_num, "chunk_index": chunk_index},
+                        page_content=construir_contenido_enriquecido(paragraph, materia, title),
+                        metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
                     ))
                     chunk_index += 1
+                else:
+                    step = max(config.chunk_size - config.chunk_overlap, 1)
+                    for start in range(0, len(paragraph), step):
+                        piece = paragraph[start:start + config.chunk_size]
+                        documents.append(Document(
+                            page_content=construir_contenido_enriquecido(piece, materia, title),
+                            metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
+                        ))
+                        chunk_index += 1
 
     return documents
 
@@ -287,6 +365,7 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
     return CacheBackedEmbeddings.from_bytes_store(
         underlying_embeddings=base,
         document_embedding_cache=LocalFileStore(str(EMBEDDINGS_CACHE_DIR)),
+        query_embedding_cache=True,
         key_encoder=lambda x: hashlib.sha256(prefix + (x if isinstance(x, bytes) else x.encode())).hexdigest(),
     )
 
@@ -294,6 +373,18 @@ def construir_embeddings(config: "CargaConfig") -> CacheBackedEmbeddings:
 def es_error_de_rate_limit(error: Exception) -> bool:
     error_text = str(error).upper()
     return any(token in error_text for token in ("RESOURCE_EXHAUSTED", "RATE LIMIT", "429", "QUOTA"))
+
+
+def es_error_de_cuota_agotada(error: Exception) -> bool:
+    error_text = str(error).upper()
+    patrones = (
+        "GENERATEREQUESTSPERDAYPERPROJECTPERMODEL-FREETIER",
+        "PERDAYPERPROJECTPERMODEL",
+        "GENERATE_CONTENT_FREE_TIER_REQUESTS",
+        "CHECK YOUR PLAN AND BILLING DETAILS",
+        "CURRENT QUOTA",
+    )
+    return "RESOURCE_EXHAUSTED" in error_text and any(patron in error_text for patron in patrones)
 
 
 def construir_chunk_ids(filename: str, sha256: str, chunks: list[Document]) -> list[str]:
