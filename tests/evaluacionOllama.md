@@ -41,12 +41,16 @@ max_context_chunks = 5
 refresh = true
 
 [Parametros 2]
-# Subimos temperatura a 1.0 (Sin tocar nada más)
-temperatura = 1.0
+retrieval_type = mmr
+
+[Parametros 3]
+retrieval_type = threshold
+threshold = 0.6
 
 [Parametros 3]
 # Temperatura 1.5 y Chunks grandes (1000/200) para contexto más amplio
 temperatura = 1.5
+chunking_technique = paragraph_custom
 chunk_size = 1000
 chunk_overlap = 200
 refresh = true

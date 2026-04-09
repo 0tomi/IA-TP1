@@ -9,6 +9,8 @@ _Ultima actualizacion: 2026-04-08 23:06:42_
 
 ## Conversacion 1
 
+**Puntaje evaluado: 1 / 18**
+
 **Parametros:**
 
 | Parametro | Valor |
@@ -494,6 +496,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 
 ## Conversacion 2
 
+**Puntaje evaluado: 1.5 / 18**
+
 **Parametros modificados respecto a la conversacion anterior:**
 
 | Parametro | Valor |
@@ -963,6 +967,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 ---
 
 ## Conversacion 3
+
+**Puntaje evaluado: 1 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 
@@ -1442,3 +1448,11 @@ No dispongo de información en mis documentos para responder esta consulta.
 | 2 | 10377 | 547 | 10924 |
 | 3 | 11118 | 628 | 11746 |
 | **Total** | **32613** | **1801** | **34414** |
+
+## 📊 Resumen de Resultados Finales
+*   **Conversacion 1:** 1 / 18 (5.5%)
+*   **Conversacion 2:** 1.5 / 18 (8.3%)
+*   **Conversacion 3:** 1 / 18 (5.5%)
+
+**Conclusión del análisis:** 
+El rendimiento del RAG en este test fue extremadamente pobre. La causa raíz parece radicar en la estrategia de división del texto (`chunking_technique: recursive`), la cual generó fragmentos de contexto sin sentido semántico (como "Promoción:", "Bases de Datos:", o "Investigación Operativa."). Al perder la completitud semántica de los párrafos originales, el buscador semántico no logra encontrar la información, y cuando lo hace, el modelo no tiene suficientes datos para responder adecuadamente o, en el peor de los casos (como en la Pregunta 4 de la Conversación 2), cruza requerimientos de una materia hacia otra. 

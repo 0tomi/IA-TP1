@@ -10,6 +10,8 @@ _Ultima actualizacion: 2026-04-08 22:36:56_
 
 ## Conversacion 1
 
+**Puntaje evaluado: 5 / 18**
+
 **Parametros:**
 
 | Parametro | Valor |
@@ -522,6 +524,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 
 ## Conversacion 2
 
+**Puntaje evaluado: 4.5 / 18**
+
 **Parametros modificados respecto a la conversacion anterior:**
 
 | Parametro | Valor |
@@ -1014,6 +1018,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 
 ## Conversacion 3
 
+**Puntaje evaluado: 0 / 18**
+
 **Parametros modificados respecto a la conversacion anterior:**
 
 | Parametro | Valor |
@@ -1310,6 +1316,8 @@ No he podido encontrar información relevante en mis documentos para responder a
 ---
 
 ## Conversacion 4
+
+**Puntaje evaluado: 5.5 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 
@@ -1778,3 +1786,13 @@ _Evaluacion interrumpida antes de procesar la pregunta 18._
 | 3 | 0 | 0 | 0 |
 | 4 | 18500 | 1367 | 19867 |
 | **Total** | **59790** | **3643** | **63433** |
+
+## 📊 Resumen de Resultados Finales
+*   **Conversacion 1:** 5 / 18 (27.7%)
+*   **Conversacion 2:** 4.5 / 18 (25%)
+*   **Conversacion 3:** 0 / 18 (0%)
+*   **Conversacion 4:** 5.5 / 18 (30.5%)
+
+**Conclusión del análisis:** 
+El rendimiento general del RAG es bajo debido a fallos significativos en la **recuperación de documentos** (Retrieval), ya que en la mayoría de los casos no logra extraer los *chunks* que contienen la respuesta. No obstante, el LLM tiene un excelente comportamiento de mitigación de alucinaciones: cada vez que el contexto no es suficiente, se abstiene correctamente de inventar información. 
+La **Conversación 4** (threshold=0.5) fue la configuración más exitosa, rescatando algo de información cruzada, mientras que la **Conversación 3** evidenció que un umbral de 0.7 rompe por completo el sistema.

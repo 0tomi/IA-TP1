@@ -54,6 +54,12 @@ BULLETS = {
 # Regex para borrar caracteres de areas privadas de fuentes
 RE_PRIVATE_USE = re.compile(r'[\uF000-\uF8FF]')
 
+# Párrafos vacíos que quedaron con espacios en el medio, ej. "\n \n"
+RE_LINEAS_EN_BLANCO = re.compile(r'\n[^\S\n\f]*\n+')
+
+# Casos de extracción donde una URL queda pegada a la palabra anterior.
+RE_URL_PEGADA = re.compile(r'(?<=[0-9A-Za-zÁÉÍÓÚÑÜáéíóúñü])(?=(?:https?://|www\.))')
+
 # Pypdf a veces se come el espacio entre mayuscula y minuscula.
 # E.g. "HolaMundo" -> "Hola Mundo".
 # El {2,} es para no romper siglas tipo "iPhone" o "macOS".
@@ -102,6 +108,7 @@ def sanear(texto: str) -> str:
         texto = texto.replace(char, rmpl)
 
     texto = RE_PRIVATE_USE.sub('', texto)
+    texto = RE_URL_PEGADA.sub(' ', texto)
 
     # 2. Arreglo de estructura y saltos de linea random de pypdf
     texto = RE_PALABRAS_PEGADAS.sub(r'\1 \2', texto)
@@ -113,10 +120,12 @@ def sanear(texto: str) -> str:
     # 3. Trim general y colapso de whitespaces
     texto = re.sub(r'[^\S\n\f]+', ' ', texto)           # espacios multiples a uno solo (preserva \f)
     texto = re.sub(r' +([.,;:])', r'\1', texto)        # arregla el espacio feo antes de comas/puntos
+    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)    # normaliza párrafos tipo "\n \n"
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
     # Vuela numeros sueltos asumiendo que son nros de pagina
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
+    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
     # Recortamos por página para no perder separadores \f en bordes del documento.

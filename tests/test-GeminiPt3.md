@@ -9,6 +9,8 @@ _Ultima actualizacion: 2026-04-08 23:15:26_
 
 ## Conversacion 1
 
+**Puntaje evaluado: 6.5 / 18**
+
 **Parametros:**
 
 | Parametro | Valor |
@@ -518,6 +520,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 
 ## Conversacion 2
 
+**Puntaje evaluado: 5 / 18**
+
 **Parametros modificados respecto a la conversacion anterior:**
 
 | Parametro | Valor |
@@ -1004,6 +1008,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 ---
 
 ## Conversacion 3
+
+**Puntaje evaluado: 6.5 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 
@@ -1496,3 +1502,11 @@ No dispongo de información en mis documentos para responder esta consulta.
 | 2 | 20733 | 1161 | 21894 |
 | 3 | 20637 | 1476 | 22113 |
 | **Total** | **62886** | **3981** | **66867** |
+
+## 📊 Resumen de Resultados Finales
+*   **Conversacion 1:** 6.5 / 18 (36.1%)
+*   **Conversacion 2:** 5 / 18 (27.7%)
+*   **Conversacion 3:** 6.5 / 18 (36.1%)
+
+**Conclusión del análisis:** 
+La técnica de fragmentación `paragraph_custom` demostró ser **superior en la conservación de significado semántico**, lo que se tradujo en una mejor recuperación de documentos para el LLM. A diferencia de la fragmentación recursiva que destrozaba el contexto, esta técnica permitió generar respuestas con alto nivel de precisión (ej. enumerar múltiples unidades de un plan de estudio con total coherencia). Aunque sigue teniendo puntos ciegos en algunas preguntas puntuales donde no logra cruzar la similitud (posiblemente por el modelo de embedding en sí), el salto de calidad respecto a las pruebas anteriores es notorio.

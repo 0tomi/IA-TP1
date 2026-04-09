@@ -128,7 +128,9 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
-        separators=["\n\n", "\n", ". ", " ", ""],
+        # En PDFs extraídos quedan muchos saltos de línea residuales. Conviene
+        # priorizar cierres más semánticos antes de cortar por maquetado crudo.
+        separators=["\n\n", ". ", "; ", ": ", "\n", " ", ""],
     )
 
     documents = []
@@ -209,12 +211,13 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
     documents = []
     chunk_index = 0
     current_section = ""  # persiste entre páginas
+    split_parrafos = re.compile(r'\n\s*\n+')
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
 
-        for paragraph in page_text.split("\n\n"):
+        for paragraph in split_parrafos.split(page_text):
             paragraph = paragraph.strip()
             if not paragraph:
                 continue
@@ -230,8 +233,8 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
                 ))
                 chunk_index += 1
             else:
-                # Hard-cut into pieces of chunk_size, no overlap
-                for start in range(0, len(paragraph), config.chunk_size):
+                step = max(config.chunk_size - config.chunk_overlap, 1)
+                for start in range(0, len(paragraph), step):
                     piece = paragraph[start:start + config.chunk_size]
                     documents.append(Document(
                         page_content=piece,

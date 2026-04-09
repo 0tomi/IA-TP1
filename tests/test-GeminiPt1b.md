@@ -9,6 +9,8 @@ _Ultima actualizacion: 2026-04-08 22:53:55_
 
 ## Conversacion 1
 
+**Puntaje evaluado: 5.5 / 18**
+
 **Parametros:**
 
 | Parametro | Valor |
@@ -528,3 +530,9 @@ No dispongo de información en mis documentos para responder esta consulta.
 |---|---|---|---|
 | 1 | 20800 | 1267 | 22067 |
 | **Total** | **20800** | **1267** | **22067** |
+
+## 📊 Resumen de Resultados Finales
+*   **Conversacion 1:** 5.5 / 18 (30.5%)
+
+**Conclusión del análisis:** 
+El rendimiento general del RAG usando recuperación basada en umbral (`threshold = 0.5`) sigue demostrando fallas significativas en la parte de **recuperación** (Retrieval), limitando la cantidad de documentos relevantes que el LLM recibe para construir su respuesta. Sin embargo, en las preguntas donde sí encuentra el contexto adecuado, el LLM responde precisa y exhaustivamente, absteniéndose de alucinar en el resto de los casos.

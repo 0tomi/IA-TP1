@@ -177,7 +177,7 @@ def formatear_chunks(chunk_details: list[dict]) -> str:
             f"{i}. [Documento: {c['source']} | Materia: {c['materia']} "
             f"| Seccion: {c['section']} | Pagina: {c['pagina']}]"
         )
-        preview = c["preview"].replace("\n", " ").strip()
+        preview = re.sub(r"\s+", " ", c["preview"]).strip()
         lineas.append(f"   > {preview}")
     return "\n".join(lineas) + "\n"
 
