@@ -47,11 +47,18 @@ DEFAULT_SYSTEM_PROMPT = (
     "mantenerte dentro de lo que efectivamente dicen los fragmentos recuperados.\n"
     "Evita muletillas como 'según el contexto', 'el documento dice', 'la información proporcionada' "
     "o equivalentes.\n\n"
+    "IMPORTANTE: Al final de tu respuesta, en una línea aparte, indicá los índices "
+    "de los documentos del contexto que REALMENTE usaste para elaborar tu respuesta, "
+    "usando EXACTAMENTE este formato:\n"
+    "<<FUENTES: 0, 2, 3>>\n"
+    "Si no usaste ningún documento, escribí: <<FUENTES: >>\n\n"
     "### CONTEXTO ###\n"
     "{contexto}\n\n"
     "### PREGUNTA DEL USUARIO ###\n"
     "{pregunta}\n"
 )
+
+_FUENTES_PATTERN = re.compile(r"<<FUENTES:\s*([\d,\s]*)>>")
 
 
 @dataclass
@@ -69,7 +76,7 @@ class RAGServiceConfig:
     # Parámetros de carga/embedding
     chunk_size: int = 300
     chunk_overlap: int = 30
-    embedding_model: str = "gemini-embedding-001"
+    embedding_model: str = "text-embedding-004"
     chunking_technique: str = "fixed_size_overlap"
     embedding_batch_size: int = 20
     max_retries: int = 3
@@ -99,9 +106,21 @@ class RAGResponse:
     chunks_found: int
     chunks_used: int
     chunk_details: list[dict]
+    sources_used: list[dict]
     prompt_tokens: int | None
     completion_tokens: int | None
     total_tokens: int | None
+
+
+def _parse_cited_sources(text: str) -> tuple[str, list[int] | None]:
+    """Extract cited document indices from the LLM response and return clean text."""
+    match = _FUENTES_PATTERN.search(text)
+    if not match:
+        return text, None
+    indices_str = match.group(1).strip()
+    indices = [int(x.strip()) for x in indices_str.split(",") if x.strip().isdigit()] if indices_str else []
+    clean = text[: match.start()].rstrip()
+    return clean, indices
 
 
 def _guardar_last_data_process(config: RAGServiceConfig) -> None:
@@ -117,11 +136,11 @@ def _guardar_last_data_process(config: RAGServiceConfig) -> None:
         }, f, ensure_ascii=False, indent=2)
 
 
-def preparar_datos_rag(config: RAGServiceConfig) -> None:
+def preparar_datos_rag(config: RAGServiceConfig, progress_callback=None) -> None:
     # El saneamiento puede borrar /data, asi que soltamos cualquier cliente
     # de Chroma abierto en este proceso antes de tocar el storage.
     RAGService.reset()
-    ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh)
+    ejecutar_saneamiento(config.to_carga_config(), refresh=config.refresh, progress_callback=progress_callback)
     _guardar_last_data_process(config)
 
 
@@ -135,11 +154,11 @@ class RAGService:
         return cls._instance
 
     @classmethod
-    def create(cls, config: RAGServiceConfig) -> "RAGService":
-        preparar_datos_rag(config)
-        return cls(config)
+    def create(cls, config: RAGServiceConfig, progress_callback=None) -> "RAGService":
+        preparar_datos_rag(config, progress_callback=progress_callback)
+        return cls(config, progress_callback=progress_callback)
 
-    def __init__(self, config: RAGServiceConfig):
+    def __init__(self, config: RAGServiceConfig, progress_callback=None):
         runtime_config = self._runtime_config(config)
         if self._initialized:
             if self.config != runtime_config:
@@ -153,6 +172,9 @@ class RAGService:
 
         load_dotenv()
         self._validar_llm_config()
+
+        if progress_callback:
+            progress_callback({"phase": "vectorstore", "message": "Cargando modelo de embeddings..."})
 
         # El modelo ya fue descargado durante el saneamiento. Suprimimos las
         # progress bars de huggingface_hub para que la segunda carga (desde
@@ -309,11 +331,12 @@ class RAGService:
             )
 
         bloques_texto = []
-        for d in docs_contexto:
+        for i, d in enumerate(docs_contexto):
             meta = d.metadata
             bloques_texto.append(
-                f"Documento: {meta.get('documento', '?')}\n"
+                f"[Documento {i}]: {meta.get('documento', '?')}\n"
                 f"Sección: {meta.get('seccion', '?')}\n"
+                f"Página: {meta.get('pagina', '?')}\n"
                 f"Contenido:\n{d.page_content}"
             )
         contexto_str = "\n\n---\n\n".join(bloques_texto)
@@ -332,6 +355,15 @@ class RAGService:
                 (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
                 "",
             )
+
+        # Parsear índices de fuentes citadas por el LLM y limpiar el texto
+        clean_answer, cited_indices = _parse_cited_sources(content)
+        if cited_indices is not None:
+            valid_indices = set(cited_indices) & {d["index"] for d in chunk_details}
+            sources_used = [d for d in chunk_details if d["index"] in valid_indices]
+        else:
+            # Fallback: si el LLM no incluyó la marca, devolver todas
+            sources_used = chunk_details
 
         # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
         prompt_tokens = None
@@ -352,10 +384,11 @@ class RAGService:
                 total_tokens = getattr(usage, "total_tokens", None)
 
         return RAGResponse(
-            answer=content,
+            answer=clean_answer,
             chunks_found=chunks_found,
             chunks_used=chunks_used,
             chunk_details=chunk_details,
+            sources_used=sources_used,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
