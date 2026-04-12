@@ -51,9 +51,16 @@
   - **Respuesta:** El porcentaje de asistencia exigido en común es el **80%**.
   - *(Fuentes: `PROGRAMA - Investigación Operativa.pdf`, `Planificación 2025 - Comunicacion y Redes.pdf`, `PROGRAMA- Metodología de la Investigación.docx.pdf`)*
 
-- Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
-  - **Respuesta:** La diferencia **no se puede calcular a partir de los documentos**. El programa de "Investigación Operativa" especifica explícitamente que requiere un promedio general de **80 puntos o más** entre los parciales. Sin embargo, el documento del programa de "Inteligencia Artificial" sólo detalla los contenidos temáticos y bibliografía, sin hacer ninguna mención sobre el sistema de evaluación ni los promedios requeridos para la promoción o regularidad.
-  - *(Fuentes: `PROGRAMA - Investigación Operativa.pdf`, `IA - Programa de Cátedra (campus).pdf`)*
+- Un proyecto integrador requiere utilizar un software para resolver problemas de optimización a gran escala que pueda conectarse de forma fluida con bases de datos espaciales.
+  Según las herramientas enseñadas en las materias, ¿qué combinación de software visto en Bases de Datos Avanzadas e Investigación Operativa sería la más adecuada para este objetivo?
+
+  Fuentes y Fragmentos a combinar:
+   1. BDA_Planificacion:
+      - Fragmento: "SOFTWARE REQUERIDO: PostgreSQL: versión 9.6 o superior... QGIS: versión compatible con PostgreSQL" (QGIS aporta el aspecto espacial/geográfico y PostgreSQL la base de
+        datos).
+   2. PROGRAMA - Investigación Operativa:
+      - Fragmento: "LINGO (64 bits): Una versión avanzada y más potente del motor LINDO. Está diseñado para modelar y resolver problemas de optimización de gran escala, permitiendo una
+        integración más fluida con bases de datos..."
 
 - Si un estudiante desea investigar sobre el impacto de los "Agentes que aprenden" y las "Redes Neuronales" en la selección de personal y el teletrabajo en Argentina, ¿qué
   normativas legales y temas específicos de los programas de Inteligencia Artificial y RRHH debería cruzar en su marco teórico?
