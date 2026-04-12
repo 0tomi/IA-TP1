@@ -9,6 +9,8 @@ _Ultima actualizacion: 2026-04-12 19:34:11_
 
 ## Conversacion 1
 
+**Puntaje evaluado: 14.5 / 18**
+
 **Parametros:**
 
 | Parametro | Valor |
@@ -543,6 +545,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 ---
 
 ## Conversacion 2
+
+**Puntaje evaluado: 15 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 
@@ -1089,6 +1093,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 
 ## Conversacion 3
 
+**Puntaje evaluado: 16 / 18**
+
 **Parametros modificados respecto a la conversacion anterior:**
 
 | Parametro | Valor |
@@ -1575,6 +1581,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 ---
 
 ## Conversacion 4
+
+**Puntaje evaluado: 15 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 
@@ -2177,6 +2185,8 @@ No dispongo de información en mis documentos para responder esta consulta.
 ---
 
 ## Conversacion 5
+
+**Puntaje evaluado: 14.5 / 18**
 
 **Parametros modificados respecto a la conversacion anterior:**
 

@@ -27,33 +27,27 @@
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
 [Parametros 1]
-# Mejor score observado: fixed chunks chicos + similarity
-llm_provider = ollama
-llm_model = llama3.1
-embedding_model = BAAI/bge-m3
-temperatura = 1.0
-chunk_size = 300
-chunk_overlap = 30
+# Mejor score que nos dio antes
+llm_provider = google
+llm_model = gemini-3.1-flash-lite-preview
+embedding_model = gemini-embedding-001
+temperatura = 0.5
+chunk_size = 800
+chunk_overlap = 200
 chunking_technique = fixed_size_overlap
 retrieval_type = similarity_search
-top_k = 6
-max_context_chunks = 6
-refresh = true
-
-[Parametros 1.2]
-# Chunk mas grande
-chunk_size = 500
-chunk_overlap = 100
+top_k = 8
+max_context_chunks = 8
 refresh = true
 
 [Parametros 2]
 # Segundo mejor score: recursive 512/100 + similarity
 chunking_technique = recursive
-chunk_size = 512
-chunk_overlap = 100
+chunk_size = 800
+chunk_overlap = 200
 retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
+top_k = 6
+max_context_chunks = 6
 refresh = true
 
 [Parametros 3]
@@ -61,14 +55,4 @@ refresh = true
 retrieval_type = mmr
 top_k = 8
 max_context_chunks = 8
-refresh = true
-
-[Parametros 4]
-# Ultima variante a contrastar: recursive 300/50 + similarity
-chunking_technique = recursive
-chunk_size = 300
-chunk_overlap = 50
-retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
 refresh = true
