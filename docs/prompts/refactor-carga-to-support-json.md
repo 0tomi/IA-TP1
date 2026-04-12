@@ -1,3 +1,6 @@
+--
+Modelo que ejecuto esto: Gemini Pro 3.1 Preview
+--
 Tu objetivo va a ser diseñar un refactor completo de carga.py para funcionar de forma distinta. 
 saneo.py ahora devuelve en /output/ JSONs estructurados con el contenido de cada documento que debemos de chunkear y hacer el embedding para cargar en la base de datos vectorial.
 Debemos adaptar carga.py para funcionar con este nuevo formato y aprovechar las nuevas ventajas que nos da.
