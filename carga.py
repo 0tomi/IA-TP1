@@ -31,6 +31,23 @@ LOCAL_MODELS = {
 
 DEFAULT_SECTION_TITLE = "General"
 
+# Detecta bloques de tabla Markdown (sincronizado con sanear.py)
+_RE_MD_TABLE = re.compile(r'(?:^[ \t]*\|[^\n]+\|[ \t]*\n?)+', flags=re.MULTILINE)
+
+
+def _split_preserving_tables(text: str) -> list[tuple[str, bool]]:
+    """Separa texto en segmentos (contenido, es_tabla). Tablas = chunk atomico."""
+    segments: list[tuple[str, bool]] = []
+    last_end = 0
+    for match in _RE_MD_TABLE.finditer(text):
+        if match.start() > last_end:
+            segments.append((text[last_end:match.start()], False))
+        segments.append((match.group(0), True))
+        last_end = match.end()
+    if last_end < len(text):
+        segments.append((text[last_end:], False))
+    return segments
+
 
 @dataclass
 class CargaConfig:
@@ -110,20 +127,25 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
         if not page_text:
             continue
 
-        for chunk in splitter.split_text(page_text):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            documents.append(Document(
-                page_content=chunk,
-                metadata={
-                    **base_metadata,
-                    "seccion": DEFAULT_SECTION_TITLE,
-                    "pagina": page_num,
-                    "chunk_index": chunk_idx,
-                },
-            ))
-            chunk_idx += 1
+        for segment, es_tabla in _split_preserving_tables(page_text):
+            if es_tabla:
+                bloque = segment.strip()
+                if bloque:
+                    documents.append(Document(
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
+                    ))
+                    chunk_idx += 1
+            else:
+                for chunk in splitter.split_text(segment):
+                    chunk = chunk.strip()
+                    if not chunk:
+                        continue
+                    documents.append(Document(
+                        page_content=chunk,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx},
+                    ))
+                    chunk_idx += 1
 
     return documents
 
@@ -142,20 +164,25 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
         if not page_text:
             continue
 
-        for chunk in splitter.split_text(page_text):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            documents.append(Document(
-                page_content=chunk,
-                metadata={
-                    **base_metadata,
-                    "seccion": DEFAULT_SECTION_TITLE,
-                    "pagina": page_num,
-                    "chunk_index": chunk_idx,
-                },
-            ))
-            chunk_idx += 1
+        for segment, es_tabla in _split_preserving_tables(page_text):
+            if es_tabla:
+                bloque = segment.strip()
+                if bloque:
+                    documents.append(Document(
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
+                    ))
+                    chunk_idx += 1
+            else:
+                for chunk in splitter.split_text(segment):
+                    chunk = chunk.strip()
+                    if not chunk:
+                        continue
+                    documents.append(Document(
+                        page_content=chunk,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx},
+                    ))
+                    chunk_idx += 1
     return documents
 
 
@@ -169,39 +196,40 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
         if not page_text:
             continue
 
-        for paragraph in split_parrafos.split(page_text):
-            paragraph = paragraph.strip()
-            if not paragraph:
-                continue
-
-            if len(paragraph) <= config.chunk_size:
-                documents.append(Document(
-                    page_content=paragraph,
-                    metadata={
-                        **base_metadata,
-                        "seccion": DEFAULT_SECTION_TITLE,
-                        "pagina": page_num,
-                        "chunk_index": chunk_index,
-                    },
-                ))
-                chunk_index += 1
-            else:
-                step = max(config.chunk_size - config.chunk_overlap, 1)
-                for start in range(0, len(paragraph), step):
-                    piece = paragraph[start:start + config.chunk_size]
-                    piece = piece.strip()
-                    if not piece:
-                        continue
+        for segment, es_tabla in _split_preserving_tables(page_text):
+            if es_tabla:
+                bloque = segment.strip()
+                if bloque:
                     documents.append(Document(
-                        page_content=piece,
-                        metadata={
-                            **base_metadata,
-                            "seccion": DEFAULT_SECTION_TITLE,
-                            "pagina": page_num,
-                            "chunk_index": chunk_index,
-                        },
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index, "es_tabla": True},
                     ))
                     chunk_index += 1
+                continue
+
+            for paragraph in split_parrafos.split(segment):
+                paragraph = paragraph.strip()
+                if not paragraph:
+                    continue
+
+                if len(paragraph) <= config.chunk_size:
+                    documents.append(Document(
+                        page_content=paragraph,
+                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index},
+                    ))
+                    chunk_index += 1
+                else:
+                    step = max(config.chunk_size - config.chunk_overlap, 1)
+                    for start in range(0, len(paragraph), step):
+                        piece = paragraph[start:start + config.chunk_size]
+                        piece = piece.strip()
+                        if not piece:
+                            continue
+                        documents.append(Document(
+                            page_content=piece,
+                            metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index},
+                        ))
+                        chunk_index += 1
 
     return documents
 
