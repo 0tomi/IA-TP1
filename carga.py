@@ -60,70 +60,19 @@ class CargaConfig:
     retry_wait_seconds: int = 60
 
 
-def parsear_toon(toon_str: str) -> dict:
-    if "\n" not in toon_str:
-        raise ValueError("TOON string malformado: no contiene salto de línea.")
-
-    newline_pos = toon_str.index("\n")
-    header = toon_str[:newline_pos]
-    if not header.startswith("document{"):
-        raise ValueError(f"Header TOON inesperado: {header!r}")
-
-    data_line = toon_str[newline_pos + 1:].rstrip("\n")
-
-    if not data_line.startswith('"'):
-        raise ValueError(f"Línea de datos TOON malformada: se esperaba '\"', got: {data_line[:30]!r}")
-
-    # Find closing unescaped quote after the opening one
-    i = 1  # skip opening quote
-    while i < len(data_line):
-        if data_line[i] == "\\" and i + 1 < len(data_line):
-            i += 2  # skip escaped char
-            continue
-        if data_line[i] == '"':
-            break
-        i += 1
-
-    raw_content = data_line[1:i]
-    # Unescape: order matters — backslash first
-    content = raw_content.replace("\\\\", "\x00BACKSLASH\x00")
-    content = content.replace("\\n", "\n")
-    content = content.replace("\\f", "\f")
-    content = content.replace('\\"', '"')
-    content = content.replace("\x00BACKSLASH\x00", "\\")
-
-    rest = data_line[i + 2:]  # skip closing quote and comma
-    parts = [p.strip() for p in rest.split(",")]
-    source = parts[0]
-    sha256 = parts[1]
-    pages = int(parts[2])
-    chars_original = int(parts[3])
-    chars_saneado = int(parts[4].strip())
-
-    return {
-        "content": content,
-        "source": source,
-        "sha256": sha256,
-        "pages": pages,
-        "chars_original": chars_original,
-        "chars_saneado": chars_saneado,
-    }
-
-
-def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
+def chunk_recursive(paginas: list[dict], config: CargaConfig, base_metadata: dict) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
-        # En PDFs extraídos quedan muchos saltos de línea residuales. Conviene
-        # priorizar cierres más semánticos antes de cortar por maquetado crudo.
         separators=["\n\n", ". ", "; ", ": ", "\n", " ", ""],
     )
 
     documents = []
     chunk_idx = 0
 
-    for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
+    for pagina in paginas:
+        page_num = pagina["numero"]
+        page_text = pagina["contenido"].strip()
         if not page_text:
             continue
 
@@ -150,7 +99,7 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
     return documents
 
 
-def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
+def chunk_fixed_size_overlap(paginas: list[dict], config: CargaConfig, base_metadata: dict) -> list[Document]:
     splitter = CharacterTextSplitter(
         separator="",
         chunk_size=config.chunk_size,
@@ -159,8 +108,9 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     documents = []
     chunk_idx = 0
 
-    for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
+    for pagina in paginas:
+        page_num = pagina["numero"]
+        page_text = pagina["contenido"].strip()
         if not page_text:
             continue
 
@@ -186,13 +136,14 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     return documents
 
 
-def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
+def chunk_paragraph_custom(paginas: list[dict], config: CargaConfig, base_metadata: dict) -> list[Document]:
     documents = []
     chunk_index = 0
     split_parrafos = re.compile(r'\n\s*\n+')
 
-    for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
+    for pagina in paginas:
+        page_num = pagina["numero"]
+        page_text = pagina["contenido"].strip()
         if not page_text:
             continue
 
@@ -382,9 +333,10 @@ def procesar_lote_documentos(
             continue
             
         entry = registro[filename]
-        toon_path = ROOT / entry.get("toon", "")
-        if not toon_path.exists():
-            print(f"[carga] ERROR: El archivo {toon_path} no existe.")
+        json_rel = entry.get("json_path", "")
+        json_file = ROOT / json_rel
+        if not json_file.exists():
+            print(f"[carga] ERROR: El archivo {json_file} no existe.")
             resultados.append((filename, False))
             continue
 
@@ -392,16 +344,15 @@ def procesar_lote_documentos(
         sha256 = entry.get("sha256", "")
         
         try:
-            with open(toon_path, "r", encoding="utf-8") as f:
-                toon_content = f.read()
+            with open(json_file, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
 
-            parsed = parsear_toon(toon_content)
-            content = parsed["content"]
+            paginas = parsed["paginas"]
 
             print(f"[carga] Procesando {filename}  (Sección: {materia})...")
 
             base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
-            chunks = chunker(content, config, base_metadata)
+            chunks = chunker(paginas, config, base_metadata)
             chunk_ids = construir_chunk_ids(filename, sha256, chunks)
 
             existing = vectorstore.get(where={"documento": filename})

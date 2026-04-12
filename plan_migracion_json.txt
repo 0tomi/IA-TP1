@@ -1,0 +1,59 @@
+### OBJETIVO: Migración a Estructura JSON por Páginas (Eliminación de TOON)
+
+El objetivo es modernizar el pipeline de datos eliminando el formato monolítico `.toon` (que separa páginas con `\f`) y pasando a un modelo jerárquico en `.json` donde cada documento tiene un array explicíto de páginas. `pymupdf4llm` ya está instalado extrayendo tablas Markdown y encabezados correctamente.
+
+#### Paso 1: Refactor de Extracción y Limpieza (`sanear.py`)
+
+1. **Eliminar TOON:** Borrar `escapar_toon()` y `guardar_toon()`. Reemplazar por una exportación a `.json` puro.
+2. **Modificar `extraer_texto()`:**
+   - Actualmente usa `pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)` y luego colapsa el texto con `"\f".join(textos)`.
+   - **Cambio Requerido:** Debe devolver la lista de textos por página directamente: `list[str]`.
+3. **Modificar `sanear()`:**
+   - La función `sanear()` debe pasar a procesar el texto *por página*. 
+   - Debe recibir y devolver un `list[str]`. 
+   - La lógica de `_proteger_tablas()`, limpieza de puntuación, etc., se debe mapear sobre cada elemento de esta lista individualmente. 
+   - **Eliminar** completamente la lógica de `"\f"` y `_reconstruir_lineas_quebradas()` (esta última está pensada para PDFs planos rotos, pero con el parseo inteligente de `pymupdf4llm` ya no es necesaria y arruina la estructura Markdown).
+4. **Estructura del Output (`.json`):**
+   El archivo de salida debe guardarse dentro de `/output` con extensión `.json` y seguir este esquema:
+   ```json
+   {
+     "source": "nombre_archivo.pdf",
+     "sha256": "hash_del_archivo",
+     "total_pages": 4,
+     "chars_original": 12500,
+     "chars_saneado": 12000,
+     "paginas": [
+       {
+         "numero": 1,
+         "contenido": "# Titulo Extraido\nTabla en markdown...\nProsa normal..."
+       },
+       {
+         "numero": 2,
+         "contenido": "Texto de la pagina 2..."
+       }
+     ]
+   }
+   ```
+5. **Ajuste en el Registry:** Que actualice la métrica asignando `"json_path"` en `registry.json` en lugar de `"toon"`.
+
+#### Paso 2: Adaptación del Chunker (`carga.py`)
+
+1. **Eliminar funciones heredadas:** Borrar `parsear_toon()`.
+2. **Ciclo de Lectura Principal (`procesar_lote_documentos`):**
+   - Cargar el archivo `.json` usando directamente `json.load()`.
+3. **Refactor de los Chunkers (e.g. `chunk_recursive`):**
+   - Actualmente, iteran haciendo: `for page_num, page_text in enumerate(text.split("\f"), start=1):`
+   - **Cambio Requerido:** Cambiar la firma para que los chunkers reciban directamente la lista de diccionarios `"paginas"` proveniente del JSON.
+   - La iteración pasa a ser semántica:
+     ```python
+     for pagina in parsed_json["paginas"]:
+         page_num = pagina["numero"]
+         page_text = pagina["contenido"]
+         # ... lógica actual de _split_preserving_tables() ...
+     ```
+
+#### Ejecución y Pruebas
+Tras hacer los cambios en *ambos scripts a la vez*, la secuencia de comandos para validar es:
+- `python saneamiento/sanear.py --refresh` (debe poblar `output/` con archivos `.json` estructurados).
+- Abrir uno de los `.json` generados para verificar visualmente que las tablas Markdown están intactas dentro de `"contenido"`.
+- `python carga.py --archivos bda_planificacion.pdf` (verificará la ingestión correcta en ChromaDB).
