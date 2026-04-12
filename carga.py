@@ -34,7 +34,7 @@ TITLE_MAX_LEN = 80
 TITLE_MAX_WORDS = 10
 TITLE_ALLOWED_CHARS = re.compile(r'^[\w\s\-:,\.()%/]+$')
 TITLE_STRUCTURAL_PREFIX = re.compile(
-    r'^(?:\d+(?:\.\d+)*[\.)]?|[IVXLCM]+[\.)]?|Cap[ií]tulo|Unidad|Tema|M[oó]dulo|Secci[oó]n|Parte|Anexo)\b',
+    r'^(?:\d+(?:\.\d+)*(?:[\.)])|[IVXLCM]+[\.)]?|Cap[ií]tulo|Unidad|Tema|M[oó]dulo|Secci[oó]n|Parte|Anexo)\b',
     flags=re.IGNORECASE,
 )
 TITLE_STOPWORDS = {
@@ -46,8 +46,11 @@ HEADING_CONTINUATION_WORDS = {
     "los", "o", "para", "por", "sin", "u", "y",
 }
 NOISY_SECTION_TITLES = {
+    "buenos",
+    "cruz",
     "dicho",
     "estas",
+    "jimena",
     "santa",
     "tamara",
     "visto",
@@ -123,6 +126,8 @@ def _es_titulo_generico(linea: str) -> bool:
     palabras = re.findall(r'[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9]+', linea)
     if not palabras or len(palabras) > TITLE_MAX_WORDS:
         return False
+    if len(palabras) < 2:
+        return False
 
     palabras_contenido = 0
     for palabra in palabras:
@@ -133,7 +138,7 @@ def _es_titulo_generico(linea: str) -> bool:
             continue
         return False
 
-    return palabras_contenido >= 2 or (palabras_contenido == 1 and len(palabras) == 1)
+    return palabras_contenido >= 2
 
 
 def _es_candidato_titulo_contextual(linea: str) -> bool:
@@ -145,6 +150,10 @@ def _es_candidato_titulo_contextual(linea: str) -> bool:
         return False
     if re.search(r'\b(?:https?://|www\.)', linea, flags=re.IGNORECASE):
         return False
+    if not re.search(r'[A-Za-zÁÉÍÓÚÑÜáéíóúñü]', linea):
+        return False
+    if re.fullmatch(r'\d+(?:[.,]\d+)?%?', linea):
+        return False
     return len(linea.split()) <= TITLE_MAX_WORDS
 
 
@@ -155,7 +164,8 @@ def es_titulo(linea: str) -> bool:
     if TITLE_STRUCTURAL_PREFIX.match(linea) or linea.isupper():
         return True
     if linea.endswith(":"):
-        return len(linea.split()) <= TITLE_MAX_WORDS
+        words = linea.rstrip(":").split()
+        return 2 <= len(words) <= TITLE_MAX_WORDS
     return _es_titulo_generico(linea)
 
 
@@ -168,21 +178,7 @@ def _es_titulo_en_contexto(lines: list[str], index: int) -> bool:
         return True
 
     prev_line = _normalizar_linea(lines[index - 1]) if index > 0 else ""
-    next_line = _normalizar_linea(lines[index + 1]) if index + 1 < len(lines) else ""
-
-    if TITLE_STRUCTURAL_PREFIX.match(prev_line):
-        return True
-    if len(linea.split()) >= 3 and (not prev_line or not next_line):
-        return True
-    return False
-
-
-def _combinar_titulos(base: str, nuevo: str) -> str:
-    if not base or base == DEFAULT_SECTION_TITLE:
-        return nuevo
-    if nuevo in base:
-        return base
-    return f"{base} | {nuevo}"
+    return bool(TITLE_STRUCTURAL_PREFIX.match(prev_line))
 
 
 def _siguiente_linea_no_vacia(lines: list[str], index: int) -> str:
@@ -204,7 +200,7 @@ def _debe_degradar_titulo(title: str, next_line: str) -> bool:
 
     if not title or title == DEFAULT_SECTION_TITLE:
         return False
-    if TITLE_STRUCTURAL_PREFIX.match(title) or title.endswith(":") or "|" in title:
+    if TITLE_STRUCTURAL_PREFIX.match(title) or "|" in title:
         return False
 
     words = title.split()
@@ -229,59 +225,30 @@ def segmentar_pagina_en_secciones(page_text: str, current_title: str) -> tuple[l
     lines = page_text.split("\n")
     sections: list[tuple[str, str]] = []
     current_lines: list[str] = []
-    title_pending_without_body = False
-    last_valid_title = current_title if current_title != DEFAULT_SECTION_TITLE else ""
+    active_title = _normalizar_linea(current_title) or DEFAULT_SECTION_TITLE
+    if not active_title:
+        active_title = DEFAULT_SECTION_TITLE
 
     def flush_section() -> None:
         content = "\n".join(current_lines).strip()
         if content:
-            sections.append((current_title, content))
+            sections.append((active_title, content))
 
     for index, raw_line in enumerate(lines):
         normalized_line = _normalizar_linea(raw_line)
         if _es_titulo_en_contexto(lines, index):
             next_line = _siguiente_linea_no_vacia(lines, index)
-            degrade_title = _debe_degradar_titulo(normalized_line, next_line)
-            resolved_title = last_valid_title or current_title or DEFAULT_SECTION_TITLE
-
-            if current_lines:
-                flush_section()
-                current_lines = []
-                if not degrade_title:
-                    current_title = normalized_line
-                    last_valid_title = current_title
-                else:
-                    current_title = resolved_title
-            elif title_pending_without_body:
-                if not degrade_title:
-                    current_title = _combinar_titulos(current_title, normalized_line)
-                    last_valid_title = current_title
-            else:
-                if not degrade_title:
-                    current_title = normalized_line
-                    last_valid_title = current_title
-                else:
-                    current_title = resolved_title
-
-            title_pending_without_body = True
-            continue
+            if not _debe_degradar_titulo(normalized_line, next_line):
+                if current_lines:
+                    flush_section()
+                    current_lines = []
+                active_title = normalized_line
+                continue
 
         current_lines.append(raw_line)
-        if normalized_line:
-            title_pending_without_body = False
 
     flush_section()
-    return sections, current_title
-
-
-def construir_contenido_enriquecido(chunk: str, materia: str, seccion: str) -> str:
-    prefijo = [f"Materia: {materia}"]
-    if seccion:
-        prefijo.append(f"Sección: {seccion}")
-
-    chunk = chunk.strip()
-    encabezado = "\n".join(prefijo)
-    return f"{encabezado}\n\n{chunk}" if chunk else encabezado
+    return sections, active_title
 
 
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
@@ -297,8 +264,6 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
     chunk_idx = 0
 
     current_title = DEFAULT_SECTION_TITLE  # persiste entre páginas
-    materia = base_metadata.get("materia", "General")
-
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
             continue
@@ -307,8 +272,11 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
 
         for title, content in sections:
             for chunk in splitter.split_text(content):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
                 documents.append(Document(
-                    page_content=construir_contenido_enriquecido(chunk, materia, title),
+                    page_content=chunk,
                     metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx},
                 ))
                 chunk_idx += 1
@@ -325,7 +293,6 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     documents = []
     chunk_idx = 0
     current_title = DEFAULT_SECTION_TITLE
-    materia = base_metadata.get("materia", "General")
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
@@ -335,8 +302,11 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
 
         for title, content in sections:
             for chunk in splitter.split_text(content):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
                 documents.append(Document(
-                    page_content=construir_contenido_enriquecido(chunk, materia, title),
+                    page_content=chunk,
                     metadata={
                         **base_metadata,
                         "seccion": title,
@@ -353,7 +323,6 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
     chunk_index = 0
     current_section = DEFAULT_SECTION_TITLE  # persiste entre páginas
     split_parrafos = re.compile(r'\n\s*\n+')
-    materia = base_metadata.get("materia", "General")
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
         if not page_text.strip():
@@ -369,7 +338,7 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
 
                 if len(paragraph) <= config.chunk_size:
                     documents.append(Document(
-                        page_content=construir_contenido_enriquecido(paragraph, materia, title),
+                        page_content=paragraph,
                         metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
                     ))
                     chunk_index += 1
@@ -377,8 +346,11 @@ def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) 
                     step = max(config.chunk_size - config.chunk_overlap, 1)
                     for start in range(0, len(paragraph), step):
                         piece = paragraph[start:start + config.chunk_size]
+                        piece = piece.strip()
+                        if not piece:
+                            continue
                         documents.append(Document(
-                            page_content=construir_contenido_enriquecido(piece, materia, title),
+                            page_content=piece,
                             metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
                         ))
                         chunk_index += 1

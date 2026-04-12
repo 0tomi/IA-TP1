@@ -367,40 +367,7 @@ class RAGService:
         texto = "".join(char for char in texto if not unicodedata.combining(char))
         return texto.lower()
 
-    def _inferir_materia_desde_query(self, user_query: str) -> str | None:
-        normalized_query = self._normalizar_texto(user_query)
-        normalized_query = re.sub(r"\s+", " ", normalized_query)
-
-        aliases = {
-            "Inteligencia Artificial": ["inteligencia artificial", "ia"],
-            "Investigación Operativa": ["investigacion operativa"],
-            "Metodología de la Investigación": ["metodologia de la investigacion", "metodologia"],
-            "Comunicacion y Redes": ["comunicaciones y redes", "comunicacion y redes", "redes y comunicaciones"],
-            "Bases de Datos Avanzadas": ["bases de datos avanzadas", "bda"],
-            "Informática y Recursos Humanos": ["informatica y recursos humanos", "informática y recursos humanos", "rrhh"],
-        }
-
-        matches = []
-        for materia, patterns in aliases.items():
-            if any(pattern in normalized_query for pattern in patterns):
-                matches.append(materia)
-
-        return matches[0] if len(matches) == 1 else None
-
     def _recuperar_documentos(self, user_query: str):
-        inferred_materia = self._inferir_materia_desde_query(user_query)
-        if not inferred_materia:
-            return self._retriever.invoke(user_query)
-
-        search_kwargs = {**self._search_kwargs, "filter": {"materia": inferred_materia}}
-        filtered_retriever = self._vectorstore.as_retriever(
-            search_type=self._search_type,
-            search_kwargs=search_kwargs,
-        )
-        docs = filtered_retriever.invoke(user_query)
-
-        if docs:
-            return docs
         return self._retriever.invoke(user_query)
 
     @classmethod
