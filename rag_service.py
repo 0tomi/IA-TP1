@@ -2,9 +2,7 @@ from dataclasses import dataclass, field, replace
 from dotenv import load_dotenv
 import json
 import os
-import re
 import time
-import unicodedata
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -202,12 +200,17 @@ class RAGService:
         # El modelo ya fue descargado durante el saneamiento. Suprimimos las
         # progress bars de huggingface_hub para que la segunda carga (desde
         # cache local) no interfiera con el input de questionary en la consola.
+        disable_progress_bars = None
+        enable_progress_bars = None
         try:
             from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
             disable_progress_bars()
             embeddings = construir_embeddings(self.config.to_carga_config())
         finally:
-            enable_progress_bars()
+            if disable_progress_bars is None:
+                embeddings = construir_embeddings(self.config.to_carga_config())
+            if callable(enable_progress_bars):
+                enable_progress_bars()
 
         self._vectorstore = Chroma(
             collection_name=COLLECTION_NAME,
@@ -215,14 +218,14 @@ class RAGService:
             embedding_function=embeddings,
         )
 
-        search_kwargs = {"k": config.top_k}
+        search_kwargs = {"k": self.config.top_k}
         search_type = "similarity"
 
-        if config.retrieval_type == "mmr":
+        if self.config.retrieval_type == "mmr":
             search_type = "mmr"
-        elif config.retrieval_type == "threshold":
+        elif self.config.retrieval_type == "threshold":
             search_type = "similarity_score_threshold"
-            search_kwargs["score_threshold"] = config.threshold
+            search_kwargs["score_threshold"] = self.config.threshold
 
         self._search_type = search_type
         self._search_kwargs = search_kwargs
@@ -375,18 +378,34 @@ class RAGService:
             }
         )
 
-        # Extraer texto — content puede ser str o lista de bloques según el wrapper.
-        if isinstance(response, str):
-            content = response
-        else:
-            content = response.content
-            if isinstance(content, list):
-                content = next(
-                    (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
-                    "",
-                )
+        content = self._extraer_content(response)
+        prompt_tokens, completion_tokens, total_tokens = self._extraer_usage_tokens(response)
 
-        # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
+        return RAGResponse(
+            answer=content,
+            chunks_found=chunks_found,
+            chunks_used=chunks_used,
+            chunk_details=chunk_details,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+
+    @staticmethod
+    def _extraer_content(response) -> str:
+        # content puede ser str o lista de bloques según el wrapper del modelo.
+        if isinstance(response, str):
+            return response
+        content = response.content
+        if isinstance(content, list):
+            return next(
+                (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
+                "",
+            )
+        return content
+
+    @staticmethod
+    def _extraer_usage_tokens(response) -> tuple[int | None, int | None, int | None]:
         prompt_tokens = None
         completion_tokens = None
         total_tokens = None
@@ -404,21 +423,7 @@ class RAGService:
                 completion_tokens = getattr(usage, "output_tokens", None)
                 total_tokens = getattr(usage, "total_tokens", None)
 
-        return RAGResponse(
-            answer=content,
-            chunks_found=chunks_found,
-            chunks_used=chunks_used,
-            chunk_details=chunk_details,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
-
-    @staticmethod
-    def _normalizar_texto(texto: str) -> str:
-        texto = unicodedata.normalize("NFKD", texto)
-        texto = "".join(char for char in texto if not unicodedata.combining(char))
-        return texto.lower()
+        return prompt_tokens, completion_tokens, total_tokens
 
     def _recuperar_documentos(self, user_query: str):
         return self._retriever.invoke(user_query)
