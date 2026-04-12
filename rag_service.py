@@ -82,7 +82,6 @@ class RAGServiceConfig:
 
     # Control de preparacion de datos
     refresh: bool = False
-    metadata_filter: dict | None = None
 
     # Prompt del sistema (editable por el usuario)
     system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
@@ -224,8 +223,6 @@ class RAGService:
         elif config.retrieval_type == "threshold":
             search_type = "similarity_score_threshold"
             search_kwargs["score_threshold"] = config.threshold
-        if config.metadata_filter:
-            search_kwargs["filter"] = config.metadata_filter
 
         self._search_type = search_type
         self._search_kwargs = search_kwargs

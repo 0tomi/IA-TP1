@@ -33,7 +33,6 @@ _Ultima actualizacion: 2026-04-12 20:24:34_
 | retry_wait_seconds | 60 |
 | include_metadata_in_embedding | True |
 | refresh | True |
-| metadata_filter | None |
 
 ### Pregunta 1
 
