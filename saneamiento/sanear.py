@@ -54,6 +54,42 @@ BULLETS = {
 # Regex para borrar caracteres de areas privadas de fuentes
 RE_PRIVATE_USE = re.compile(r'[\uF000-\uF8FF]')
 
+# Detecta un bloque contiguo de filas Markdown de tabla (lineas que empiezan y terminan con |)
+RE_TABLE_BLOCK = re.compile(
+    r'(?:^[ \t]*\|[^\n]+\|[ \t]*\n?)+',
+    flags=re.MULTILINE,
+)
+_TABLE_PLACEHOLDER = "\x00TABLE_{}\x00"
+
+
+def _proteger_tablas(texto: str) -> tuple[str, list[str]]:
+    """Reemplaza bloques de tabla Markdown con placeholders. Retorna (texto_sin_tablas, tablas)."""
+    tablas: list[str] = []
+    def _reemplazar(m: re.Match) -> str:
+        tablas.append(m.group(0))
+        return _TABLE_PLACEHOLDER.format(len(tablas) - 1)
+    texto_sin_tablas = RE_TABLE_BLOCK.sub(_reemplazar, texto)
+    return texto_sin_tablas, tablas
+
+
+def _restaurar_tablas(texto: str, tablas: list[str]) -> str:
+    """Reinserta los bloques de tabla en sus placeholders."""
+    for i, tabla in enumerate(tablas):
+        texto = texto.replace(_TABLE_PLACEHOLDER.format(i), tabla)
+    return texto
+
+
+def _limpiar_chars_tabla(tabla: str) -> str:
+    """Aplica solo la limpieza de caracteres (ligaduras, puntuacion) al contenido de una tabla."""
+    tabla = unicodedata.normalize('NFKC', tabla)
+    for lig, rmpl in LIGADURAS_TIPOGRAFICAS.items():
+        tabla = tabla.replace(lig, rmpl)
+    for char, rmpl in PUNTUACION.items():
+        tabla = tabla.replace(char, rmpl)
+    for char, rmpl in BULLETS.items():
+        tabla = tabla.replace(char, rmpl)
+    return tabla
+
 # Párrafos vacíos que quedaron con espacios en el medio, ej. "\n \n"
 RE_LINEAS_EN_BLANCO = re.compile(r'\n[^\S\n\f]*\n+')
 
@@ -87,6 +123,9 @@ def _es_linea_estructural(linea: str) -> bool:
 
 def _debe_unir_lineas(linea_anterior: str, linea_actual: str) -> bool:
     if not linea_anterior or not linea_actual:
+        return False
+    # No tocar filas de tabla Markdown (belt-and-suspenders junto al patron proteger/restaurar)
+    if linea_actual.lstrip().startswith('|') or linea_anterior.lstrip().startswith('|'):
         return False
     if RE_FINAL_PUNTUACION_FUERTE.search(linea_anterior):
         return False
@@ -140,20 +179,25 @@ def guardar_registro(registro: dict):
         json.dump(registro, f, ensure_ascii=False, indent=2)
 
 def extraer_texto(pdf_path: Path) -> tuple[str, int]:
+    import pymupdf4llm
     from pypdf import PdfReader
-    reader = PdfReader(pdf_path)
-    paginas = []
-    for page in reader.pages:
-        texto = page.extract_text()
-        # Incluimos siempre — aunque sea vacía — para que el índice \f
-        # coincida exactamente con el número de página física del PDF.
-        paginas.append(texto or "")
-    # \f (form feed) como separador de páginas — se preserva hasta los chunkers
-    # para que puedan anotar el número de página en cada chunk.
-    return "\f".join(paginas), len(reader.pages)
+
+    # pypdf para el conteo: barato y consistente con el resto del registro
+    num_paginas = len(PdfReader(pdf_path).pages)
+
+    # pymupdf4llm con page_chunks=True devuelve una lista de dicts, uno por pagina,
+    # cada uno con "text" en Markdown (tablas como | col | col |, prosa normal).
+    paginas_md = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
+    textos = [page_dict.get("text", "") for page_dict in paginas_md]
+
+    # \f como separador de paginas — igual que antes, el chunker lo usa para metadata
+    return "\f".join(textos), num_paginas
 
 def sanear(texto: str) -> str:
-    # 1. Limpieza de caracteres raros
+    # 0. Extraer bloques de tabla Markdown para protegerlos del pipeline de limpieza
+    texto, tablas_protegidas = _proteger_tablas(texto)
+
+    # 1. Limpieza de caracteres raros (solo sobre prosa, las tablas estan fuera)
     texto = unicodedata.normalize('NFKC', texto)
 
     for lig, rmpl in LIGADURAS_TIPOGRAFICAS.items():
@@ -166,26 +210,26 @@ def sanear(texto: str) -> str:
     texto = RE_PRIVATE_USE.sub('', texto)
     texto = RE_URL_PEGADA.sub(' ', texto)
 
-    # 2. Arreglo de estructura y saltos de linea random de pypdf
+    # 2. Arreglo de estructura y saltos de linea
     texto = RE_PALABRAS_PEGADAS.sub(r'\1 \2', texto)
-
-    # A veces quedan saltos de linea cortando oraciones a la mitad. Si la linea
-    # anterior no cierra una idea fuerte, la rearmamos incluso si la siguiente
-    # arranca con mayuscula.
     texto = _reconstruir_lineas_quebradas(texto)
 
     # 3. Trim general y colapso de whitespaces
-    texto = re.sub(r'[^\S\n\f]+', ' ', texto)           # espacios multiples a uno solo (preserva \f)
-    texto = re.sub(r' +([.,;:])', r'\1', texto)        # arregla el espacio feo antes de comas/puntos
-    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)    # normaliza párrafos tipo "\n \n"
+    texto = re.sub(r'[^\S\n\f]+', ' ', texto)
+    texto = re.sub(r' +([.,;:])', r'\1', texto)
+    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    # Vuela numeros sueltos asumiendo que son nros de pagina
+    # Vuela numeros sueltos (nros de pagina) — seguro porque celdas numericas estan protegidas
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
     texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    # Recortamos por página para no perder separadores \f en bordes del documento.
+    # 4. Restaurar tablas y aplicarles limpieza de caracteres
+    tablas_limpias = [_limpiar_chars_tabla(t) for t in tablas_protegidas]
+    texto = _restaurar_tablas(texto, tablas_limpias)
+
+    # Recortamos por pagina para no perder separadores \f en bordes del documento.
     paginas = [pagina.strip() for pagina in texto.split("\f")]
     return "\f".join(paginas)
 
