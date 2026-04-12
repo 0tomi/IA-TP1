@@ -158,3 +158,4 @@ data/chroma/
 data/embeddings_cache/
 data/*
 saneamiento/output/*
+/frontend
