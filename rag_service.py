@@ -112,7 +112,24 @@ class RAGResponse:
 
 
 class _RawLLMMessageOutputParser(BaseOutputParser):
-    """Devuelve el mensaje crudo del LLM para preservar usage_metadata cuando exista."""
+    """
+    Parser "passthrough" para chains de documentos.
+
+    Contexto importante:
+    - Nosotros NO necesitamos convertir la respuesta del LLM a `str`.
+    - Pero `create_stuff_documents_chain(...)`, por default, usa un parser de texto
+      (`StrOutputParser`) y termina devolviendo solo string.
+    - Si dejamos ese default, perdemos el `AIMessage` crudo y su `usage_metadata`
+      (tokens de entrada/salida/total).
+
+    ¿Qué hace este parser?
+    - Mantiene la salida "cruda" cuando está disponible (`Generation.message`).
+    - Si el wrapper no entrega mensaje, cae a `Generation.text`.
+
+    Así, en `_ejecutar_query` podemos seguir leyendo:
+    - `response.content`
+    - `response.usage_metadata` (cuando el backend lo provee)
+    """
 
     @property
     def _type(self) -> str:
@@ -122,6 +139,8 @@ class _RawLLMMessageOutputParser(BaseOutputParser):
         return text
 
     def parse_result(self, result: list[Generation], *, partial: bool = False):
+        # `result` viene del chain: tomamos solo la primera generación.
+        # Priorizamos devolver el mensaje crudo para no perder metadata de uso.
         if not result:
             return ""
         first = result[0]

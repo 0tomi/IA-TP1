@@ -51,7 +51,7 @@
   - **Respuesta:** El porcentaje de asistencia exigido en común es el **80%**.
   - *(Fuentes: `PROGRAMA - Investigación Operativa.pdf`, `Planificación 2025 - Comunicacion y Redes.pdf`, `PROGRAMA- Metodología de la Investigación.docx.pdf`)*
 
-- Un proyecto integrador requiere utilizar un software para resolver problemas de optimización a gran escala que pueda conectarse de forma fluida con bases de datos espaciales.
+- Un proyecto integrador requiere utilizar un software para resolver problemas de optimización a gran escala que pueda conectarse de forma   fluida con bases de datos espaciales.
   Según las herramientas enseñadas en las materias, ¿qué combinación de software visto en Bases de Datos Avanzadas e Investigación Operativa sería la más adecuada para este objetivo?
 
   Fuentes y Fragmentos a combinar:
