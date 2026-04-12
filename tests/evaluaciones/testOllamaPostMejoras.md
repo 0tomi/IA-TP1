@@ -4,7 +4,7 @@
 - ¿Cuáles son los contenidos de la materia Inteligencia Artificial?
 - ¿En qué materia se enseña el concepto de Lógica Difusa?
 - ¿Cuál es el plan de estudios de Metodología de la Investigación?
-- En Comunicaciones y Redes, ¿cómo hago para quedar como alumno regular?
+- ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
 - ¿Qué instancias de recuperación nos provee Investigación Operativa?
 - ¿Para qué sirve el software TORA y qué módulos incluye según la cátedra?
 
@@ -15,7 +15,8 @@
 - Los requisitos para regularizar en Bases de Datos Avanzadas y en Redes y Comunicaciones, ¿son iguales? ¿Qué diferencias tienen?
 - ¿Cuál es el porcentaje de asistencia a clases que exigen en común las materias de Investigación Operativa, Comunicaciones y Redes, y Metodología de la Investigación?
 - Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
-- ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
+- Si un estudiante desea investigar sobre el impacto de los "Agentes que aprenden" y las "Redes Neuronales" en la selección de personal y el teletrabajo en Argentina, ¿qué
+  normativas legales y temas específicos de los programas de Inteligencia Artificial y RRHH debería cruzar en su marco teórico?
 
 # C) Preguntas de Borde
 
