@@ -99,6 +99,128 @@ RE_URL_PEGADA = re.compile(r'(?<=[0-9A-Za-zÁÉÍÓÚÑÜáéíóúñü])(?=(?:h
 # Pypdf a veces se come el espacio entre mayuscula y minuscula.
 RE_PALABRAS_PEGADAS = re.compile(r'([a-záéíóúñü])([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,})')
 
+DEFAULT_SECTION_TITLE = "General"
+RE_MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+(.+?)\s*$')
+RE_NUMERIC_OR_ROMAN_PREFIX = re.compile(
+    r'^\s*(?:\d{1,2}(?:\.\d+)*|[IVXLCDM]{1,8})\s*[).:-]\s+\S+',
+    flags=re.IGNORECASE,
+)
+RE_SEMANTIC_PREFIX = re.compile(
+    r'^\s*(?:cap[ií]tulo|unidad|tema|m[oó]dulo|secci[oó]n)\s+(?:\d+|[IVXLCDM]+)\b',
+    flags=re.IGNORECASE,
+)
+
+
+def _es_linea_tabla_markdown(linea: str) -> bool:
+    s = linea.strip()
+    return s.startswith("|") and s.endswith("|")
+
+
+def _normalizar_titulo(raw_line: str) -> str:
+    line = raw_line.strip()
+    md_match = RE_MARKDOWN_HEADING.match(line)
+    if md_match:
+        line = md_match.group(1).strip()
+
+    line = re.sub(r'\s+', ' ', line).strip()
+    if line.endswith(":"):
+        line = line[:-1].strip()
+    return line
+
+
+def _es_linea_titulo(linea: str) -> bool:
+    if not linea or not linea.strip():
+        return False
+
+    stripped = linea.strip()
+
+    if _es_linea_tabla_markdown(stripped):
+        return False
+
+    if stripped.startswith(("- ", "* ", "+ ")):
+        return False
+
+    if RE_MARKDOWN_HEADING.match(stripped):
+        return True
+
+    if RE_NUMERIC_OR_ROMAN_PREFIX.match(stripped):
+        return True
+
+    if RE_SEMANTIC_PREFIX.match(stripped):
+        return True
+
+    if len(stripped) < 4 or len(stripped) > 140:
+        return False
+
+    if stripped.endswith((".", ";", "!", "?")):
+        return False
+
+    tokens = re.findall(r"[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9]+", stripped)
+    if len(tokens) < 2 or len(tokens) > 18:
+        return False
+
+    alpha_chars = [c for c in stripped if c.isalpha()]
+    if len(alpha_chars) < 5:
+        return False
+
+    upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
+    if upper_ratio >= 0.72:
+        return True
+
+    if stripped.endswith(":") and len(tokens) <= 12:
+        return True
+
+    return False
+
+
+def _extraer_secciones_pagina(texto: str) -> list[dict]:
+    if not texto.strip():
+        return []
+
+    secciones: list[dict] = []
+    titulo_actual: str | None = None
+    buffer: list[str] = []
+
+    def flush() -> None:
+        nonlocal buffer
+        contenido = "\n".join(buffer).strip()
+        if not contenido:
+            buffer = []
+            return
+        secciones.append({
+            "titulo": titulo_actual or DEFAULT_SECTION_TITLE,
+            "contenido": contenido,
+        })
+        buffer = []
+
+    for raw_line in texto.splitlines():
+        line = raw_line.rstrip()
+        if _es_linea_titulo(line):
+            nuevo_titulo = _normalizar_titulo(line)
+            if not nuevo_titulo:
+                buffer.append(line)
+                continue
+            flush()
+            titulo_actual = nuevo_titulo
+            continue
+        buffer.append(line)
+
+    flush()
+
+    if not secciones:
+        return [{"titulo": DEFAULT_SECTION_TITLE, "contenido": texto.strip()}]
+    return secciones
+
+
+def estructurar_paginas_en_secciones(paginas_limpias: list[str]) -> list[dict]:
+    return [
+        {
+            "numero": i + 1,
+            "secciones": _extraer_secciones_pagina(texto),
+        }
+        for i, texto in enumerate(paginas_limpias)
+    ]
+
 def calcular_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, 'rb') as f:
@@ -208,7 +330,7 @@ def imprimir_reporte(procesados: list, salteados: list, cargados: list, carga_er
     print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache. | {len(cargados)} chroma OK | {len(carga_errores)} chroma err.")
     print("=" * 55)
 
-def parsear_args() -> CargaConfig:
+def parsear_args() -> tuple[CargaConfig, bool]:
     parser = argparse.ArgumentParser(
         description="Saneamiento de PDFs y carga en ChromaDB para el pipeline RAG."
     )
@@ -231,6 +353,12 @@ def parsear_args() -> CargaConfig:
                         help="Reintentos ante rate limit (default: 3)")
     parser.add_argument("--retry-wait-seconds", type=int, default=60,
                         help="Segundos de espera entre reintentos (default: 60)")
+    parser.add_argument(
+        "--include-metadata-in-embedding",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Controla si se inyecta metadata textual al calcular embeddings (default: true).",
+    )
 
     parser.add_argument(
         "--refresh",
@@ -247,6 +375,7 @@ def parsear_args() -> CargaConfig:
         embedding_batch_size=args.embedding_batch_size,
         max_retries=args.max_retries,
         retry_wait_seconds=args.retry_wait_seconds,
+        include_metadata_in_embedding=args.include_metadata_in_embedding,
     )
     return config, args.refresh
 
@@ -293,6 +422,7 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
 
         paginas_crudas, num_paginas = extraer_texto(pdf_path)
         paginas_limpias = sanear(paginas_crudas)
+        paginas_estructuradas = estructurar_paginas_en_secciones(paginas_limpias)
 
         chars_original = sum(len(p) for p in paginas_crudas)
         chars_saneado = sum(len(p) for p in paginas_limpias)
@@ -303,10 +433,7 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
             "total_pages": num_paginas,
             "chars_original": chars_original,
             "chars_saneado": chars_saneado,
-            "paginas": [
-                {"numero": i + 1, "contenido": texto}
-                for i, texto in enumerate(paginas_limpias)
-            ],
+            "paginas": paginas_estructuradas,
         }
 
         json_path = OUTPUT_DIR / f"{pdf_path.stem}.json"

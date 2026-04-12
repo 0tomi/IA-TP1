@@ -17,7 +17,11 @@ from carga import (
     es_error_de_rate_limit,
 )
 from saneamiento.sanear import ejecutar_saneamiento
+from langchain_classic.chains.combine_documents.stuff import create_stuff_documents_chain
 from langchain_chroma import Chroma
+from langchain_core.output_parsers.base import BaseOutputParser
+from langchain_core.outputs import Generation
+from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 OLLAMA_BASE_URL = "http://127.0.0.1:11434"
@@ -74,9 +78,11 @@ class RAGServiceConfig:
     embedding_batch_size: int = 20
     max_retries: int = 3
     retry_wait_seconds: int = 60
+    include_metadata_in_embedding: bool = True
 
     # Control de preparacion de datos
     refresh: bool = False
+    metadata_filter: dict | None = None
 
     # Prompt del sistema (editable por el usuario)
     system_prompt: str = field(default_factory=lambda: DEFAULT_SYSTEM_PROMPT)
@@ -90,6 +96,7 @@ class RAGServiceConfig:
             embedding_batch_size=self.embedding_batch_size,
             max_retries=self.max_retries,
             retry_wait_seconds=self.retry_wait_seconds,
+            include_metadata_in_embedding=self.include_metadata_in_embedding,
         )
 
 
@@ -104,6 +111,25 @@ class RAGResponse:
     total_tokens: int | None
 
 
+class _RawLLMMessageOutputParser(BaseOutputParser):
+    """Devuelve el mensaje crudo del LLM para preservar usage_metadata cuando exista."""
+
+    @property
+    def _type(self) -> str:
+        return "raw_llm_message_output_parser"
+
+    def parse(self, text: str):
+        return text
+
+    def parse_result(self, result: list[Generation], *, partial: bool = False):
+        if not result:
+            return ""
+        first = result[0]
+        if hasattr(first, "message"):
+            return first.message
+        return first.text
+
+
 def _guardar_last_data_process(config: RAGServiceConfig) -> None:
     last_process_path = DATA_DIR / "last_data_process.json"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -114,6 +140,7 @@ def _guardar_last_data_process(config: RAGServiceConfig) -> None:
             "chunk_overlap": config.chunk_overlap,
             "chunking_technique": config.chunking_technique,
             "embedding_batch_size": config.embedding_batch_size,
+            "include_metadata_in_embedding": config.include_metadata_in_embedding,
         }, f, ensure_ascii=False, indent=2)
 
 
@@ -178,6 +205,8 @@ class RAGService:
         elif config.retrieval_type == "threshold":
             search_type = "similarity_score_threshold"
             search_kwargs["score_threshold"] = config.threshold
+        if config.metadata_filter:
+            search_kwargs["filter"] = config.metadata_filter
 
         self._search_type = search_type
         self._search_kwargs = search_kwargs
@@ -188,6 +217,21 @@ class RAGService:
         )
 
         self._llm = self._crear_llm()
+        self._document_prompt = PromptTemplate.from_template(
+            "Documento: {documento}\n"
+            "Materia: {materia}\n"
+            "Sección: {seccion}\n"
+            "Página: {pagina}\n"
+            "Contenido:\n{page_content}"
+        )
+        self._qa_prompt = PromptTemplate.from_template(self.config.system_prompt)
+        self._document_chain = create_stuff_documents_chain(
+            self._llm,
+            self._qa_prompt,
+            document_prompt=self._document_prompt,
+            output_parser=_RawLLMMessageOutputParser(),
+            document_variable_name="contexto",
+        )
         RAGService._initialized = True
 
     @staticmethod
@@ -308,30 +352,23 @@ class RAGService:
                 total_tokens=None,
             )
 
-        bloques_texto = []
-        for d in docs_contexto:
-            meta = d.metadata
-            bloques_texto.append(
-                f"Documento: {meta.get('documento', '?')}\n"
-                f"Sección: {meta.get('seccion', '?')}\n"
-                f"Contenido:\n{d.page_content}"
-            )
-        contexto_str = "\n\n---\n\n".join(bloques_texto)
-
-        prompt = self.config.system_prompt.format(
-            contexto=contexto_str,
-            pregunta=user_query,
+        response = self._document_chain.invoke(
+            {
+                "contexto": docs_contexto,
+                "pregunta": user_query,
+            }
         )
 
-        response = self._llm.invoke(prompt)
-
         # Extraer texto — content puede ser str o lista de bloques según el wrapper.
-        content = response.content
-        if isinstance(content, list):
-            content = next(
-                (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
-                "",
-            )
+        if isinstance(response, str):
+            content = response
+        else:
+            content = response.content
+            if isinstance(content, list):
+                content = next(
+                    (b["text"] for b in content if isinstance(b, dict) and b.get("type") == "text"),
+                    "",
+                )
 
         # Extraer tokens — usage_metadata puede ser dict o objeto con atributos
         prompt_tokens = None
@@ -394,7 +431,7 @@ class RAGService:
                             id_map.clear()
                 except Exception:
                     pass
-            for attr in ("_vectorstore", "_retriever", "_llm"):
+            for attr in ("_vectorstore", "_retriever", "_llm", "_document_chain", "_document_prompt", "_qa_prompt"):
                 if hasattr(instance, attr):
                     delattr(instance, attr)
         cls._instance = None

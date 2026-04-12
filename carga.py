@@ -31,23 +31,6 @@ LOCAL_MODELS = {
 
 DEFAULT_SECTION_TITLE = "General"
 
-# Detecta bloques de tabla Markdown (sincronizado con sanear.py)
-_RE_MD_TABLE = re.compile(r'(?:^[ \t]*\|[^\n]+\|[ \t]*\n?)+', flags=re.MULTILINE)
-
-
-def _split_preserving_tables(text: str) -> list[tuple[str, bool]]:
-    """Separa texto en segmentos (contenido, es_tabla). Tablas = chunk atomico."""
-    segments: list[tuple[str, bool]] = []
-    last_end = 0
-    for match in _RE_MD_TABLE.finditer(text):
-        if match.start() > last_end:
-            segments.append((text[last_end:match.start()], False))
-        segments.append((match.group(0), True))
-        last_end = match.end()
-    if last_end < len(text):
-        segments.append((text[last_end:], False))
-    return segments
-
 
 @dataclass
 class CargaConfig:
@@ -58,6 +41,29 @@ class CargaConfig:
     embedding_batch_size: int = 20
     max_retries: int = 3
     retry_wait_seconds: int = 60
+    include_metadata_in_embedding: bool = True
+
+
+def _iterar_secciones(paginas: list[dict]):
+    for fallback_num, pagina in enumerate(paginas, start=1):
+        page_num = pagina.get("numero", fallback_num)
+        secciones = pagina.get("secciones")
+
+        # Compatibilidad hacia atrás para JSONs antiguos: {"contenido": "..."}.
+        if secciones is None:
+            secciones = [{"titulo": DEFAULT_SECTION_TITLE, "contenido": pagina.get("contenido", "")}]
+
+        if not isinstance(secciones, list):
+            continue
+
+        for seccion in secciones:
+            if not isinstance(seccion, dict):
+                continue
+            section_title = (seccion.get("titulo") or DEFAULT_SECTION_TITLE).strip() or DEFAULT_SECTION_TITLE
+            section_text = (seccion.get("contenido") or "").strip()
+            if not section_text:
+                continue
+            yield page_num, section_title, section_text
 
 
 def chunk_recursive(paginas: list[dict], config: CargaConfig, base_metadata: dict) -> list[Document]:
@@ -70,31 +76,16 @@ def chunk_recursive(paginas: list[dict], config: CargaConfig, base_metadata: dic
     documents = []
     chunk_idx = 0
 
-    for pagina in paginas:
-        page_num = pagina["numero"]
-        page_text = pagina["contenido"].strip()
-        if not page_text:
-            continue
-
-        for segment, es_tabla in _split_preserving_tables(page_text):
-            if es_tabla:
-                bloque = segment.strip()
-                if bloque:
-                    documents.append(Document(
-                        page_content=bloque,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
-                    ))
-                    chunk_idx += 1
-            else:
-                for chunk in splitter.split_text(segment):
-                    chunk = chunk.strip()
-                    if not chunk:
-                        continue
-                    documents.append(Document(
-                        page_content=chunk,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx},
-                    ))
-                    chunk_idx += 1
+    for page_num, section_title, section_text in _iterar_secciones(paginas):
+        for chunk in splitter.split_text(section_text):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            documents.append(Document(
+                page_content=chunk,
+                metadata={**base_metadata, "seccion": section_title, "pagina": page_num, "chunk_index": chunk_idx},
+            ))
+            chunk_idx += 1
 
     return documents
 
@@ -108,31 +99,16 @@ def chunk_fixed_size_overlap(paginas: list[dict], config: CargaConfig, base_meta
     documents = []
     chunk_idx = 0
 
-    for pagina in paginas:
-        page_num = pagina["numero"]
-        page_text = pagina["contenido"].strip()
-        if not page_text:
-            continue
-
-        for segment, es_tabla in _split_preserving_tables(page_text):
-            if es_tabla:
-                bloque = segment.strip()
-                if bloque:
-                    documents.append(Document(
-                        page_content=bloque,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
-                    ))
-                    chunk_idx += 1
-            else:
-                for chunk in splitter.split_text(segment):
-                    chunk = chunk.strip()
-                    if not chunk:
-                        continue
-                    documents.append(Document(
-                        page_content=chunk,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_idx},
-                    ))
-                    chunk_idx += 1
+    for page_num, section_title, section_text in _iterar_secciones(paginas):
+        for chunk in splitter.split_text(section_text):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            documents.append(Document(
+                page_content=chunk,
+                metadata={**base_metadata, "seccion": section_title, "pagina": page_num, "chunk_index": chunk_idx},
+            ))
+            chunk_idx += 1
     return documents
 
 
@@ -141,46 +117,30 @@ def chunk_paragraph_custom(paginas: list[dict], config: CargaConfig, base_metada
     chunk_index = 0
     split_parrafos = re.compile(r'\n\s*\n+')
 
-    for pagina in paginas:
-        page_num = pagina["numero"]
-        page_text = pagina["contenido"].strip()
-        if not page_text:
-            continue
-
-        for segment, es_tabla in _split_preserving_tables(page_text):
-            if es_tabla:
-                bloque = segment.strip()
-                if bloque:
-                    documents.append(Document(
-                        page_content=bloque,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index, "es_tabla": True},
-                    ))
-                    chunk_index += 1
+    for page_num, section_title, section_text in _iterar_secciones(paginas):
+        for paragraph in split_parrafos.split(section_text):
+            paragraph = paragraph.strip()
+            if not paragraph:
                 continue
 
-            for paragraph in split_parrafos.split(segment):
-                paragraph = paragraph.strip()
-                if not paragraph:
-                    continue
-
-                if len(paragraph) <= config.chunk_size:
+            if len(paragraph) <= config.chunk_size:
+                documents.append(Document(
+                    page_content=paragraph,
+                    metadata={**base_metadata, "seccion": section_title, "pagina": page_num, "chunk_index": chunk_index},
+                ))
+                chunk_index += 1
+            else:
+                step = max(config.chunk_size - config.chunk_overlap, 1)
+                for start in range(0, len(paragraph), step):
+                    piece = paragraph[start:start + config.chunk_size]
+                    piece = piece.strip()
+                    if not piece:
+                        continue
                     documents.append(Document(
-                        page_content=paragraph,
-                        metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index},
+                        page_content=piece,
+                        metadata={**base_metadata, "seccion": section_title, "pagina": page_num, "chunk_index": chunk_index},
                     ))
                     chunk_index += 1
-                else:
-                    step = max(config.chunk_size - config.chunk_overlap, 1)
-                    for start in range(0, len(paragraph), step):
-                        piece = paragraph[start:start + config.chunk_size]
-                        piece = piece.strip()
-                        if not piece:
-                            continue
-                        documents.append(Document(
-                            page_content=piece,
-                            metadata={**base_metadata, "seccion": DEFAULT_SECTION_TITLE, "pagina": page_num, "chunk_index": chunk_index},
-                        ))
-                        chunk_index += 1
 
     return documents
 
@@ -257,8 +217,20 @@ def construir_chunk_ids(filename: str, sha256: str, chunks: list[Document]) -> l
     return [f"{filename}:{version}:{chunk.metadata['chunk_index']}" for chunk in chunks]
 
 
+def _texto_con_metadata_para_embedding(doc: Document) -> str:
+    meta = doc.metadata or {}
+    prefijo = (
+        f"Materia: {meta.get('materia', 'General')}\n"
+        f"Sección: {meta.get('seccion', DEFAULT_SECTION_TITLE)}\n"
+        f"Página: {meta.get('pagina', 'N/A')}\n"
+        f"Documento: {meta.get('documento', 'N/A')}"
+    )
+    return f"{prefijo}\n\n{doc.page_content}"
+
+
 def agregar_documentos_en_lotes(
     vectorstore: Chroma,
+    embeddings: CacheBackedEmbeddings,
     chunks: list[Document],
     chunk_ids: list[str],
     config: CargaConfig,
@@ -275,7 +247,19 @@ def agregar_documentos_en_lotes(
                     f"[carga]   -> Batch {batch_index}/{total_batches}: {len(batch_chunks)} chunks "
                     f"(intento {attempt}/{config.max_retries + 1})"
                 )
-                vectorstore.add_documents(batch_chunks, ids=batch_ids)
+                if config.include_metadata_in_embedding:
+                    raw_documents = [doc.page_content for doc in batch_chunks]
+                    metadatas = [doc.metadata for doc in batch_chunks]
+                    embedding_inputs = [_texto_con_metadata_para_embedding(doc) for doc in batch_chunks]
+                    vectors = embeddings.embed_documents(embedding_inputs)
+                    vectorstore._collection.upsert(
+                        ids=batch_ids,
+                        documents=raw_documents,
+                        metadatas=metadatas,
+                        embeddings=vectors,
+                    )
+                else:
+                    vectorstore.add_documents(batch_chunks, ids=batch_ids)
                 break
             except Exception as error:
                 if not es_error_de_rate_limit(error) or attempt > config.max_retries:
@@ -349,7 +333,7 @@ def procesar_lote_documentos(
 
             paginas = parsed["paginas"]
 
-            print(f"[carga] Procesando {filename}  (Sección: {materia})...")
+            print(f"[carga] Procesando {filename}  (Materia: {materia})...")
 
             base_metadata = {"materia": materia, "documento": filename, "sha256": sha256}
             chunks = chunker(paginas, config, base_metadata)
@@ -359,7 +343,7 @@ def procesar_lote_documentos(
             if existing and existing["ids"]:
                 vectorstore.delete(ids=existing["ids"])
 
-            agregar_documentos_en_lotes(vectorstore, chunks, chunk_ids, config)
+            agregar_documentos_en_lotes(vectorstore, embeddings, chunks, chunk_ids, config)
 
             carga_info = {
                 "fecha_procesamiento": datetime.now().isoformat(),
@@ -372,6 +356,7 @@ def procesar_lote_documentos(
                     "embedding_batch_size": config.embedding_batch_size,
                     "max_retries": config.max_retries,
                     "retry_wait_seconds": config.retry_wait_seconds,
+                    "include_metadata_in_embedding": config.include_metadata_in_embedding,
                 },
                 "state": "incorporado",
                 "error_message": None,
@@ -397,6 +382,7 @@ def procesar_lote_documentos(
                     "embedding_batch_size": config.embedding_batch_size,
                     "max_retries": config.max_retries,
                     "retry_wait_seconds": config.retry_wait_seconds,
+                    "include_metadata_in_embedding": config.include_metadata_in_embedding,
                 },
                 "state": "error",
                 "error_message": str(e),
@@ -417,6 +403,12 @@ def main():
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--retry-wait-seconds", type=int, default=60)
     parser.add_argument(
+        "--include-metadata-in-embedding",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Controla si se concatena metadata al texto de entrada SOLO para embeddings (default: true).",
+    )
+    parser.add_argument(
         "--chunking-technique",
         type=str,
         choices=["recursive", "fixed_size_overlap", "paragraph_custom"],
@@ -433,6 +425,7 @@ def main():
         embedding_batch_size=args.embedding_batch_size,
         max_retries=args.max_retries,
         retry_wait_seconds=args.retry_wait_seconds,
+        include_metadata_in_embedding=args.include_metadata_in_embedding,
     )
 
     procesar_lote_documentos(
