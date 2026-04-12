@@ -29,7 +29,54 @@ LOCAL_MODELS = {
     },
 }
 
-DEFAULT_SECTION_TITLE = "General"
+DEFAULT_SECTION_TITLE = "Intro / Sin título"
+
+# Detecta bloques de tabla Markdown (mismo patron que en sanear.py)
+_RE_MD_TABLE = re.compile(
+    r'(?:^[ \t]*\|[^\n]+\|[ \t]*\n?)+',
+    flags=re.MULTILINE,
+)
+
+
+def _split_preserving_tables(text: str) -> list[tuple[str, bool]]:
+    """Separa texto en segmentos (contenido, es_tabla). Las tablas deben chunearse atomicamente."""
+    segments: list[tuple[str, bool]] = []
+    last_end = 0
+    for match in _RE_MD_TABLE.finditer(text):
+        if match.start() > last_end:
+            segments.append((text[last_end:match.start()], False))
+        segments.append((match.group(0), True))
+        last_end = match.end()
+    if last_end < len(text):
+        segments.append((text[last_end:], False))
+    return segments
+
+
+TITLE_MAX_LEN = 80
+TITLE_MAX_WORDS = 10
+TITLE_ALLOWED_CHARS = re.compile(r'^[\w\s\-:,\.()%/]+$')
+TITLE_STRUCTURAL_PREFIX = re.compile(
+    r'^(?:\d+(?:\.\d+)*(?:[\.)])|[IVXLCM]+[\.)]?|Cap[ií]tulo|Unidad|Tema|M[oó]dulo|Secci[oó]n|Parte|Anexo)\b',
+    flags=re.IGNORECASE,
+)
+TITLE_STOPWORDS = {
+    "a", "al", "con", "de", "del", "e", "el", "en", "la", "las",
+    "los", "o", "para", "por", "sin", "u", "y",
+}
+HEADING_CONTINUATION_WORDS = {
+    "a", "al", "con", "de", "del", "e", "el", "en", "la", "las",
+    "los", "o", "para", "por", "sin", "u", "y",
+}
+NOISY_SECTION_TITLES = {
+    "buenos",
+    "cruz",
+    "dicho",
+    "estas",
+    "jimena",
+    "santa",
+    "tamara",
+    "visto",
+}
 
 
 @dataclass
@@ -93,6 +140,141 @@ def parsear_toon(toon_str: str) -> dict:
     }
 
 
+def _normalizar_linea(linea: str) -> str:
+    return re.sub(r'\s+', ' ', linea.strip())
+
+
+def _es_titulo_generico(linea: str) -> bool:
+    palabras = re.findall(r'[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9]+', linea)
+    if not palabras or len(palabras) > TITLE_MAX_WORDS:
+        return False
+    if len(palabras) < 2:
+        return False
+
+    palabras_contenido = 0
+    for palabra in palabras:
+        if palabra.lower() in TITLE_STOPWORDS:
+            continue
+        if palabra.isupper() or palabra[0].isupper():
+            palabras_contenido += 1
+            continue
+        return False
+
+    return palabras_contenido >= 2
+
+
+def _es_candidato_titulo_contextual(linea: str) -> bool:
+    if not linea or len(linea) > TITLE_MAX_LEN:
+        return False
+    if linea[0].islower() or linea.endswith((".", "!", "?")):
+        return False
+    if not TITLE_ALLOWED_CHARS.match(linea):
+        return False
+    if re.search(r'\b(?:https?://|www\.)', linea, flags=re.IGNORECASE):
+        return False
+    if not re.search(r'[A-Za-zÁÉÍÓÚÑÜáéíóúñü]', linea):
+        return False
+    if re.fullmatch(r'\d+(?:[.,]\d+)?%?', linea):
+        return False
+    return len(linea.split()) <= TITLE_MAX_WORDS
+
+
+def es_titulo(linea: str) -> bool:
+    linea = _normalizar_linea(linea)
+    if '|' in linea:  # fila de tabla Markdown, nunca es titulo
+        return False
+    if not _es_candidato_titulo_contextual(linea):
+        return False
+    if TITLE_STRUCTURAL_PREFIX.match(linea) or linea.isupper():
+        return True
+    if linea.endswith(":"):
+        words = linea.rstrip(":").split()
+        return 2 <= len(words) <= TITLE_MAX_WORDS
+    return _es_titulo_generico(linea)
+
+
+def _es_titulo_en_contexto(lines: list[str], index: int) -> bool:
+    linea = _normalizar_linea(lines[index])
+    if not _es_candidato_titulo_contextual(linea):
+        return False
+
+    if es_titulo(linea):
+        return True
+
+    prev_line = _normalizar_linea(lines[index - 1]) if index > 0 else ""
+    return bool(TITLE_STRUCTURAL_PREFIX.match(prev_line))
+
+
+def _siguiente_linea_no_vacia(lines: list[str], index: int) -> str:
+    for candidate in lines[index + 1:]:
+        normalized = _normalizar_linea(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _primer_token(texto: str) -> str:
+    match = re.match(r'^[^\w]*([A-Za-zÁÉÍÓÚÑÜáéíóúñü]+)', texto)
+    return match.group(1).lower() if match else ""
+
+
+def _debe_degradar_titulo(title: str, next_line: str) -> bool:
+    title = _normalizar_linea(title)
+    next_line = _normalizar_linea(next_line)
+
+    if not title or title == DEFAULT_SECTION_TITLE:
+        return False
+    if TITLE_STRUCTURAL_PREFIX.match(title) or "|" in title:
+        return False
+
+    words = title.split()
+    if len(words) != 1:
+        return False
+
+    if words[0].lower() in NOISY_SECTION_TITLES:
+        return True
+
+    next_token = _primer_token(next_line)
+    if next_token in HEADING_CONTINUATION_WORDS:
+        return False
+
+    stripped = next_line.lstrip(" .,:;-)")
+    if stripped and stripped[0].islower():
+        return True
+
+    return False
+
+
+def segmentar_pagina_en_secciones(page_text: str, current_title: str) -> tuple[list[tuple[str, str]], str]:
+    lines = page_text.split("\n")
+    sections: list[tuple[str, str]] = []
+    current_lines: list[str] = []
+    active_title = _normalizar_linea(current_title) or DEFAULT_SECTION_TITLE
+    if not active_title:
+        active_title = DEFAULT_SECTION_TITLE
+
+    def flush_section() -> None:
+        content = "\n".join(current_lines).strip()
+        if content:
+            sections.append((active_title, content))
+
+    for index, raw_line in enumerate(lines):
+        normalized_line = _normalizar_linea(raw_line)
+        if _es_titulo_en_contexto(lines, index):
+            next_line = _siguiente_linea_no_vacia(lines, index)
+            if not _debe_degradar_titulo(normalized_line, next_line):
+                if current_lines:
+                    flush_section()
+                    current_lines = []
+                active_title = normalized_line
+                continue
+
+        current_lines.append(raw_line)
+
+    flush_section()
+    return sections, active_title
+
+
 def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
@@ -105,25 +287,35 @@ def chunk_recursive(text: str, config: CargaConfig, base_metadata: dict) -> list
     documents = []
     chunk_idx = 0
 
+    current_title = DEFAULT_SECTION_TITLE  # persiste entre páginas
     for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
-        if not page_text:
+        if not page_text.strip():
             continue
 
-        for chunk in splitter.split_text(page_text):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            documents.append(Document(
-                page_content=chunk,
-                metadata={
-                    **base_metadata,
-                    "seccion": DEFAULT_SECTION_TITLE,
-                    "pagina": page_num,
-                    "chunk_index": chunk_idx,
-                },
-            ))
-            chunk_idx += 1
+        sections, current_title = segmentar_pagina_en_secciones(page_text, current_title)
+
+        for title, content in sections:
+            for segment, es_tabla in _split_preserving_tables(content):
+                if es_tabla:
+                    # Tabla atomica: un chunk completo, sin partir filas
+                    bloque = segment.strip()
+                    if not bloque:
+                        continue
+                    documents.append(Document(
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
+                    ))
+                    chunk_idx += 1
+                else:
+                    for chunk in splitter.split_text(segment):
+                        chunk = chunk.strip()
+                        if not chunk:
+                            continue
+                        documents.append(Document(
+                            page_content=chunk,
+                            metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx},
+                        ))
+                        chunk_idx += 1
 
     return documents
 
@@ -136,72 +328,91 @@ def chunk_fixed_size_overlap(text: str, config: CargaConfig, base_metadata: dict
     )
     documents = []
     chunk_idx = 0
+    current_title = DEFAULT_SECTION_TITLE
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
-        if not page_text:
+        if not page_text.strip():
             continue
 
-        for chunk in splitter.split_text(page_text):
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-            documents.append(Document(
-                page_content=chunk,
-                metadata={
-                    **base_metadata,
-                    "seccion": DEFAULT_SECTION_TITLE,
-                    "pagina": page_num,
-                    "chunk_index": chunk_idx,
-                },
-            ))
-            chunk_idx += 1
+        sections, current_title = segmentar_pagina_en_secciones(page_text, current_title)
+
+        for title, content in sections:
+            for segment, es_tabla in _split_preserving_tables(content):
+                if es_tabla:
+                    bloque = segment.strip()
+                    if not bloque:
+                        continue
+                    documents.append(Document(
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_idx, "es_tabla": True},
+                    ))
+                    chunk_idx += 1
+                else:
+                    for chunk in splitter.split_text(segment):
+                        chunk = chunk.strip()
+                        if not chunk:
+                            continue
+                        documents.append(Document(
+                            page_content=chunk,
+                            metadata={
+                                **base_metadata,
+                                "seccion": title,
+                                "pagina": page_num,
+                                "chunk_index": chunk_idx,
+                            },
+                        ))
+                        chunk_idx += 1
     return documents
 
 
 def chunk_paragraph_custom(text: str, config: CargaConfig, base_metadata: dict) -> list[Document]:
     documents = []
     chunk_index = 0
+    current_section = DEFAULT_SECTION_TITLE  # persiste entre páginas
     split_parrafos = re.compile(r'\n\s*\n+')
 
     for page_num, page_text in enumerate(text.split("\f"), start=1):
-        page_text = page_text.strip()
-        if not page_text:
+        if not page_text.strip():
             continue
 
-        for paragraph in split_parrafos.split(page_text):
-            paragraph = paragraph.strip()
-            if not paragraph:
-                continue
+        sections, current_section = segmentar_pagina_en_secciones(page_text, current_section)
 
-            if len(paragraph) <= config.chunk_size:
-                documents.append(Document(
-                    page_content=paragraph,
-                    metadata={
-                        **base_metadata,
-                        "seccion": DEFAULT_SECTION_TITLE,
-                        "pagina": page_num,
-                        "chunk_index": chunk_index,
-                    },
-                ))
-                chunk_index += 1
-            else:
-                step = max(config.chunk_size - config.chunk_overlap, 1)
-                for start in range(0, len(paragraph), step):
-                    piece = paragraph[start:start + config.chunk_size]
-                    piece = piece.strip()
-                    if not piece:
+        for title, content in sections:
+            for segment, es_tabla in _split_preserving_tables(content):
+                if es_tabla:
+                    bloque = segment.strip()
+                    if not bloque:
                         continue
                     documents.append(Document(
-                        page_content=piece,
-                        metadata={
-                            **base_metadata,
-                            "seccion": DEFAULT_SECTION_TITLE,
-                            "pagina": page_num,
-                            "chunk_index": chunk_index,
-                        },
+                        page_content=bloque,
+                        metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index, "es_tabla": True},
                     ))
                     chunk_index += 1
+                    continue
+
+                for paragraph in split_parrafos.split(segment):
+                    paragraph = paragraph.strip()
+                    if not paragraph:
+                        continue
+
+                    if len(paragraph) <= config.chunk_size:
+                        documents.append(Document(
+                            page_content=paragraph,
+                            metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
+                        ))
+                        chunk_index += 1
+                    else:
+                        step = max(config.chunk_size - config.chunk_overlap, 1)
+                        for start in range(0, len(paragraph), step):
+                            piece = paragraph[start:start + config.chunk_size]
+                            piece = piece.strip()
+                            if not piece:
+                                continue
+                            documents.append(Document(
+                                page_content=piece,
+                                metadata={**base_metadata, "seccion": title, "pagina": page_num, "chunk_index": chunk_index},
+                            ))
+                            chunk_index += 1
 
     return documents
 
