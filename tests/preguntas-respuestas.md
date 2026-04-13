@@ -51,19 +51,26 @@
   - **Respuesta:** El porcentaje de asistencia exigido en común es el **80%**.
   - *(Fuentes: `PROGRAMA - Investigación Operativa.pdf`, `Planificación 2025 - Comunicacion y Redes.pdf`, `PROGRAMA- Metodología de la Investigación.docx.pdf`)*
 
-- Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
-  - **Respuesta:** La diferencia **no se puede calcular a partir de los documentos**. El programa de "Investigación Operativa" especifica explícitamente que requiere un promedio general de **80 puntos o más** entre los parciales. Sin embargo, el documento del programa de "Inteligencia Artificial" sólo detalla los contenidos temáticos y bibliografía, sin hacer ninguna mención sobre el sistema de evaluación ni los promedios requeridos para la promoción o regularidad.
-  - *(Fuentes: `PROGRAMA - Investigación Operativa.pdf`, `IA - Programa de Cátedra (campus).pdf`)*
+- Un proyecto integrador requiere utilizar un software para resolver problemas de optimización a gran escala que pueda conectarse de forma   fluida con bases de datos espaciales.
+  Según las herramientas enseñadas en las materias, ¿qué combinación de software visto en Bases de Datos Avanzadas e Investigación Operativa sería la más adecuada para este objetivo?
 
-- ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
-  - **Respuesta:** En la materia Investigación Operativa se recomiendan las siguientes herramientas relacionadas con la resolución de modelos de optimización lineal, que conectan directamente con las unidades de Programación Lineal y el Método Simplex:
-    - **LINDO:** Especializado en resolución de problemas de programación lineal, que se corresponde con la **Unidad II (Programación Lineal)**.
-    - **WinQSB 2.0:** Resuelve problemas de programación lineal (LP) (relacionado a la **Unidad II**), además de modelos de transporte y asignación (**Unidad IV**) y programación dinámica (**Unidad V**).
-    - **PHP Simplex:** Herramienta online para validaciones y visualización gráfica, orientada a resolver problemas mediante el Método Simplex (**Unidad III**) y el Método Gráfico (**Unidad II**).
-    - **TORA:** Herramienta educativa con módulos para el Método Simplex con visualización paso a paso (**Unidad III**), y modelos de transporte y redes (**Unidad IV**).
-    - **LINGO:** Versión más potente de LINDO para resolver problemas de optimización de gran escala.
-    - **Storm:** Software orientado al procesamiento de modelos matemáticos y gestión de operaciones mediante un entorno de menús.
-  - *(Fuente: `PROGRAMA - Investigación Operativa.pdf`)*
+  Fuentes y Fragmentos a combinar:
+   1. BDA_Planificacion:
+      - Fragmento: "SOFTWARE REQUERIDO: PostgreSQL: versión 9.6 o superior... QGIS: versión compatible con PostgreSQL" (QGIS aporta el aspecto espacial/geográfico y PostgreSQL la base de
+        datos).
+   2. PROGRAMA - Investigación Operativa:
+      - Fragmento: "LINGO (64 bits): Una versión avanzada y más potente del motor LINDO. Está diseñado para modelar y resolver problemas de optimización de gran escala, permitiendo una
+        integración más fluida con bases de datos..."
+
+- Si un estudiante desea investigar sobre el impacto de los "Agentes que aprenden" y las "Redes Neuronales" en la selección de personal y el teletrabajo en Argentina, ¿qué
+  normativas legales y temas específicos de los programas de Inteligencia Artificial y RRHH debería cruzar en su marco teórico?
+
+  Fuentes y Fragmentos a combinar:
+   1. IA - Programa de Cátedra (campus):
+      - Fragmento: "Capítulo I: ... Agentes que aprenden." y "Capítulo VIII: Redes Neuronales Artificiales (RNA)".
+   2. PROGRAMA INFORMATICA Y RRHH:
+      - Fragmento: "Unidad 2: 4. El impacto de la inteligencia artificial en la gestión del talento." y "Unidad 1: ... Ley de Teletrabajo (Ley 27.555)." y "Unidad 4: Ley Nacional de
+        Protección de Datos Personales (Ley 25.326)."
 
 # C) Preguntas de Borde
 

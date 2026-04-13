@@ -158,3 +158,5 @@ data/chroma/
 data/embeddings_cache/
 data/*
 saneamiento/output/*
+/frontend
+/saneamiento/output_backup_pre_pymupdf

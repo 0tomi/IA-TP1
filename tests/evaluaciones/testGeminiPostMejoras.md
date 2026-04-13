@@ -4,7 +4,7 @@
 - ¿Cuáles son los contenidos de la materia Inteligencia Artificial?
 - ¿En qué materia se enseña el concepto de Lógica Difusa?
 - ¿Cuál es el plan de estudios de Metodología de la Investigación?
-- En Comunicaciones y Redes, ¿cómo hago para quedar como alumno regular?
+- ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
 - ¿Qué instancias de recuperación nos provee Investigación Operativa?
 - ¿Para qué sirve el software TORA y qué módulos incluye según la cátedra?
 
@@ -14,8 +14,8 @@
 - ¿Qué otra asignatura, además de la propia materia de Inteligencia Artificial, incluye explícitamente el impacto o uso de la 'Inteligencia artificial' (IA) dentro de sus unidades temáticas?
 - Los requisitos para regularizar en Bases de Datos Avanzadas y en Redes y Comunicaciones, ¿son iguales? ¿Qué diferencias tienen?
 - ¿Cuál es el porcentaje de asistencia a clases que exigen en común las materias de Investigación Operativa, Comunicaciones y Redes, y Metodología de la Investigación?
-- Si quiero promocionar todas las materias de 4to año, ¿cuál es la diferencia de promedio exigido entre Investigación Operativa e Inteligencia Artificial?
-- ¿Qué herramientas de software se recomiendan en la carrera para resolver problemas de optimización lineal y cómo se relacionan con las unidades teóricas?
+- Un proyecto integrador requiere utilizar un software para resolver problemas de optimización a gran escala que pueda conectarse de forma fluida con bases de datos espaciales. Según las herramientas enseñadas en las materias, ¿qué combinación de software visto en Bases de Datos Avanzadas e Investigación Operativa sería la más adecuada para este objetivo?
+- Si un estudiante desea investigar sobre el impacto de los "Agentes que aprenden" y las "Redes Neuronales" en la selección de personal y el teletrabajo en Argentina, ¿qué normativas legales y temas específicos de los programas de Inteligencia Artificial y RRHH debería cruzar en su marco teórico?
 
 # C) Preguntas de Borde
 
@@ -27,34 +27,31 @@
 - ¿A qué hora exacta empieza el parcial presencial del 15/06 de Investigación Operativa?
 
 [Parametros 1]
-# Mejor score observado: fixed chunks chicos + similarity
-llm_provider = ollama
-llm_model = llama3.1
-embedding_model = BAAI/bge-m3
-temperatura = 1.0
-chunk_size = 300
-chunk_overlap = 30
+# Mejor score que nos dio antes
+llm_provider = google
+llm_model = gemini-3.1-flash-lite-preview
+embedding_model = gemini-embedding-001
+temperatura = 0.5
+chunk_size = 800
+chunk_overlap = 200
 chunking_technique = fixed_size_overlap
 retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
+top_k = 8
+max_context_chunks = 8
 refresh = true
 
 [Parametros 2]
 # Segundo mejor score: recursive 512/100 + similarity
 chunking_technique = recursive
-chunk_size = 512
-chunk_overlap = 100
+chunk_size = 800
+chunk_overlap = 200
 retrieval_type = similarity_search
-top_k = 5
-max_context_chunks = 5
+top_k = 6
+max_context_chunks = 6
 refresh = true
 
 [Parametros 3]
 # Tercer mejor grupo: recursive 500/100 + MMR
-chunking_technique = recursive
-chunk_size = 500
-chunk_overlap = 100
 retrieval_type = mmr
 top_k = 8
 max_context_chunks = 8

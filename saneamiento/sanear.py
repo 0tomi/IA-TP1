@@ -2,7 +2,7 @@
 Script de saneamiento de PDFs para el pipeline del RAG.
 
 Extrae texto, limpia ruido tipografico y estructura rota por la extraccion,
-y exporta en formato .toon. Tiene cache por sha256 para no reprocesar archivos repetidos.
+y exporta en formato .json por paginas. Tiene cache por sha256 para no reprocesar archivos repetidos.
 """
 
 import argparse
@@ -54,72 +54,172 @@ BULLETS = {
 # Regex para borrar caracteres de areas privadas de fuentes
 RE_PRIVATE_USE = re.compile(r'[\uF000-\uF8FF]')
 
+# Detecta un bloque contiguo de filas Markdown de tabla (lineas que empiezan y terminan con |)
+RE_TABLE_BLOCK = re.compile(
+    r'(?:^[ \t]*\|[^\n]+\|[ \t]*\n?)+',
+    flags=re.MULTILINE,
+)
+_TABLE_PLACEHOLDER = "\x00TABLE_{}\x00"
+
+
+def _proteger_tablas(texto: str) -> tuple[str, list[str]]:
+    """Reemplaza bloques de tabla Markdown con placeholders. Retorna (texto_sin_tablas, tablas)."""
+    tablas: list[str] = []
+    def _reemplazar(m: re.Match) -> str:
+        tablas.append(m.group(0))
+        return _TABLE_PLACEHOLDER.format(len(tablas) - 1)
+    texto_sin_tablas = RE_TABLE_BLOCK.sub(_reemplazar, texto)
+    return texto_sin_tablas, tablas
+
+
+def _restaurar_tablas(texto: str, tablas: list[str]) -> str:
+    """Reinserta los bloques de tabla en sus placeholders."""
+    for i, tabla in enumerate(tablas):
+        texto = texto.replace(_TABLE_PLACEHOLDER.format(i), tabla)
+    return texto
+
+
+def _limpiar_chars_tabla(tabla: str) -> str:
+    """Aplica solo la limpieza de caracteres (ligaduras, puntuacion) al contenido de una tabla."""
+    tabla = unicodedata.normalize('NFKC', tabla)
+    for lig, rmpl in LIGADURAS_TIPOGRAFICAS.items():
+        tabla = tabla.replace(lig, rmpl)
+    for char, rmpl in PUNTUACION.items():
+        tabla = tabla.replace(char, rmpl)
+    for char, rmpl in BULLETS.items():
+        tabla = tabla.replace(char, rmpl)
+    return tabla
+
 # Párrafos vacíos que quedaron con espacios en el medio, ej. "\n \n"
-RE_LINEAS_EN_BLANCO = re.compile(r'\n[^\S\n\f]*\n+')
+RE_LINEAS_EN_BLANCO = re.compile(r'\n[^\S\n]*\n+')
 
 # Casos de extracción donde una URL queda pegada a la palabra anterior.
 RE_URL_PEGADA = re.compile(r'(?<=[0-9A-Za-zÁÉÍÓÚÑÜáéíóúñü])(?=(?:https?://|www\.))')
 
 # Pypdf a veces se come el espacio entre mayuscula y minuscula.
-# E.g. "HolaMundo" -> "Hola Mundo".
-# El {2,} es para no romper siglas tipo "iPhone" o "macOS".
 RE_PALABRAS_PEGADAS = re.compile(r'([a-záéíóúñü])([A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,})')
-RE_FINAL_PUNTUACION_FUERTE = re.compile(r'[\.!\?:…»"\'\)\]]$')
-RE_INICIO_ESTRUCTURAL = re.compile(
-    r'^(?:[-*]|\d+(?:\.\d+)*[\.)]?|[IVXLCM]+[\.)]?|Cap[ií]tulo\b|Unidad\b|Tema\b|M[oó]dulo\b|Secci[oó]n\b)',
+
+DEFAULT_SECTION_TITLE = "General"
+RE_MARKDOWN_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+(.+?)\s*$')
+RE_NUMERIC_OR_ROMAN_PREFIX = re.compile(
+    r'^\s*(?:\d{1,2}(?:\.\d+)*|[IVXLCDM]{1,8})\s*[).:-]\s+\S+',
+    flags=re.IGNORECASE,
+)
+RE_SEMANTIC_PREFIX = re.compile(
+    r'^\s*(?:cap[ií]tulo|unidad|tema|m[oó]dulo|secci[oó]n)\s+(?:\d+|[IVXLCDM]+)\b',
     flags=re.IGNORECASE,
 )
 
 
-def _es_linea_estructural(linea: str) -> bool:
-    if not linea:
+def _es_linea_tabla_markdown(linea: str) -> bool:
+    s = linea.strip()
+    return s.startswith("|") and s.endswith("|")
+
+
+def _normalizar_titulo(raw_line: str) -> str:
+    line = raw_line.strip()
+    md_match = RE_MARKDOWN_HEADING.match(line)
+    if md_match:
+        line = md_match.group(1).strip()
+
+    line = re.sub(r'\s+', ' ', line).strip()
+    if line.endswith(":"):
+        line = line[:-1].strip()
+    return line
+
+
+def _es_linea_titulo(linea: str) -> bool:
+    if not linea or not linea.strip():
         return False
-    if RE_INICIO_ESTRUCTURAL.match(linea):
+
+    stripped = linea.strip()
+
+    if _es_linea_tabla_markdown(stripped):
+        return False
+
+    if stripped.startswith(("- ", "* ", "+ ")):
+        return False
+
+    if RE_MARKDOWN_HEADING.match(stripped):
         return True
 
-    palabras = linea.split()
-    if linea.isupper() and len(palabras) <= 6:
+    if RE_NUMERIC_OR_ROMAN_PREFIX.match(stripped):
         return True
-    if linea.endswith(':') and len(palabras) <= 10:
+
+    if RE_SEMANTIC_PREFIX.match(stripped):
         return True
+
+    if len(stripped) < 4 or len(stripped) > 140:
+        return False
+
+    if stripped.endswith((".", ";", "!", "?")):
+        return False
+
+    tokens = re.findall(r"[A-Za-zÁÉÍÓÚÑÜáéíóúñü0-9]+", stripped)
+    if len(tokens) < 2 or len(tokens) > 18:
+        return False
+
+    alpha_chars = [c for c in stripped if c.isalpha()]
+    if len(alpha_chars) < 5:
+        return False
+
+    upper_ratio = sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars)
+    if upper_ratio >= 0.72:
+        return True
+
+    if stripped.endswith(":") and len(tokens) <= 12:
+        return True
+
     return False
 
 
-def _debe_unir_lineas(linea_anterior: str, linea_actual: str) -> bool:
-    if not linea_anterior or not linea_actual:
-        return False
-    if RE_FINAL_PUNTUACION_FUERTE.search(linea_anterior):
-        return False
-    if _es_linea_estructural(linea_actual):
-        return False
-    return True
+def _extraer_secciones_pagina(texto: str) -> list[dict]:
+    if not texto.strip():
+        return []
 
+    secciones: list[dict] = []
+    titulo_actual: str | None = None
+    buffer: list[str] = []
 
-def _reconstruir_lineas_quebradas(texto: str) -> str:
-    paginas_reconstruidas = []
+    def flush() -> None:
+        nonlocal buffer
+        contenido = "\n".join(buffer).strip()
+        if not contenido:
+            buffer = []
+            return
+        secciones.append({
+            "titulo": titulo_actual or DEFAULT_SECTION_TITLE,
+            "contenido": contenido,
+        })
+        buffer = []
 
-    for pagina in texto.split("\f"):
-        lineas_reconstruidas: list[str] = []
-
-        for raw_line in pagina.split("\n"):
-            linea = raw_line.strip()
-
-            if not linea:
-                lineas_reconstruidas.append("")
+    for raw_line in texto.splitlines():
+        line = raw_line.rstrip()
+        if _es_linea_titulo(line):
+            nuevo_titulo = _normalizar_titulo(line)
+            if not nuevo_titulo:
+                buffer.append(line)
                 continue
+            flush()
+            titulo_actual = nuevo_titulo
+            continue
+        buffer.append(line)
 
-            if not lineas_reconstruidas or not lineas_reconstruidas[-1]:
-                lineas_reconstruidas.append(linea)
-                continue
+    flush()
 
-            if _debe_unir_lineas(lineas_reconstruidas[-1], linea):
-                lineas_reconstruidas[-1] = f"{lineas_reconstruidas[-1]} {linea}"
-            else:
-                lineas_reconstruidas.append(linea)
+    if not secciones:
+        return [{"titulo": DEFAULT_SECTION_TITLE, "contenido": texto.strip()}]
+    return secciones
 
-        paginas_reconstruidas.append("\n".join(lineas_reconstruidas))
 
-    return "\f".join(paginas_reconstruidas)
+def estructurar_paginas_en_secciones(paginas_limpias: list[str]) -> list[dict]:
+    return [
+        {
+            "numero": i + 1,
+            "secciones": _extraer_secciones_pagina(texto),
+        }
+        for i, texto in enumerate(paginas_limpias)
+    ]
 
 def calcular_sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -139,21 +239,25 @@ def guardar_registro(registro: dict):
     with open(REGISTRY, 'w', encoding='utf-8') as f:
         json.dump(registro, f, ensure_ascii=False, indent=2)
 
-def extraer_texto(pdf_path: Path) -> tuple[str, int]:
+def extraer_texto(pdf_path: Path) -> tuple[list[str], int]:
+    import pymupdf4llm
     from pypdf import PdfReader
-    reader = PdfReader(pdf_path)
-    paginas = []
-    for page in reader.pages:
-        texto = page.extract_text()
-        # Incluimos siempre — aunque sea vacía — para que el índice \f
-        # coincida exactamente con el número de página física del PDF.
-        paginas.append(texto or "")
-    # \f (form feed) como separador de páginas — se preserva hasta los chunkers
-    # para que puedan anotar el número de página en cada chunk.
-    return "\f".join(paginas), len(reader.pages)
 
-def sanear(texto: str) -> str:
-    # 1. Limpieza de caracteres raros
+    num_paginas = len(PdfReader(pdf_path).pages)
+
+    # pymupdf4llm con page_chunks=True devuelve una lista de dicts, uno por pagina,
+    # cada uno con "text" en Markdown (tablas como | col | col |, prosa normal).
+    paginas_md = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
+    textos = [page_dict.get("text", "") for page_dict in paginas_md]
+
+    return textos, num_paginas
+
+def _sanear_pagina(texto: str) -> str:
+    """Aplica el pipeline de limpieza a una sola pagina."""
+    # 0. Extraer bloques de tabla Markdown para protegerlos del pipeline de limpieza
+    texto, tablas_protegidas = _proteger_tablas(texto)
+
+    # 1. Limpieza de caracteres raros (solo sobre prosa, las tablas estan fuera)
     texto = unicodedata.normalize('NFKC', texto)
 
     for lig, rmpl in LIGADURAS_TIPOGRAFICAS.items():
@@ -166,45 +270,34 @@ def sanear(texto: str) -> str:
     texto = RE_PRIVATE_USE.sub('', texto)
     texto = RE_URL_PEGADA.sub(' ', texto)
 
-    # 2. Arreglo de estructura y saltos de linea random de pypdf
+    # 2. Arreglo de estructura
     texto = RE_PALABRAS_PEGADAS.sub(r'\1 \2', texto)
 
-    # A veces quedan saltos de linea cortando oraciones a la mitad. Si la linea
-    # anterior no cierra una idea fuerte, la rearmamos incluso si la siguiente
-    # arranca con mayuscula.
-    texto = _reconstruir_lineas_quebradas(texto)
-
     # 3. Trim general y colapso de whitespaces
-    texto = re.sub(r'[^\S\n\f]+', ' ', texto)           # espacios multiples a uno solo (preserva \f)
-    texto = re.sub(r' +([.,;:])', r'\1', texto)        # arregla el espacio feo antes de comas/puntos
-    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)    # normaliza párrafos tipo "\n \n"
+    texto = re.sub(r'[^\S\n]+', ' ', texto)
+    texto = re.sub(r' +([.,;:])', r'\1', texto)
+    texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    # Vuela numeros sueltos asumiendo que son nros de pagina
+    # Vuela numeros sueltos (nros de pagina) — seguro porque celdas numericas estan protegidas
     texto = re.sub(r'^\s*\d{1,3}\s*$', '', texto, flags=re.MULTILINE)
     texto = RE_LINEAS_EN_BLANCO.sub('\n\n', texto)
     texto = re.sub(r'\n{3,}', '\n\n', texto)
 
-    # Recortamos por página para no perder separadores \f en bordes del documento.
-    paginas = [pagina.strip() for pagina in texto.split("\f")]
-    return "\f".join(paginas)
+    # 4. Restaurar tablas y aplicarles limpieza de caracteres
+    tablas_limpias = [_limpiar_chars_tabla(t) for t in tablas_protegidas]
+    texto = _restaurar_tablas(texto, tablas_limpias)
 
-def escapar_toon(text: str) -> str:
-    # Helper para que no rompa el formato toon
-    return text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\f', '\\f')
+    return texto.strip()
 
-def guardar_toon(doc: dict, output_path: Path):
+
+def sanear(paginas: list[str]) -> list[str]:
+    """Aplica saneamiento a cada pagina individualmente."""
+    return [_sanear_pagina(p) for p in paginas]
+
+def guardar_json(doc: dict, output_path: Path):
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write("document{content,source,sha256,pages,chars_original,chars_saneado}:\n")
-        content = escapar_toon(doc['content'])
-        f.write(
-            f'"{content}",'
-            f'{doc["source"]},'
-            f'{doc["sha256"]},'
-            f'{doc["pages"]},'
-            f'{doc["chars_original"]},'
-            f'{doc["chars_saneado"]}\n'
-        )
+        json.dump(doc, f, ensure_ascii=False, indent=2)
 
 def imprimir_reporte(procesados: list, salteados: list, cargados: list, carga_errores: list):
     print("\n" + "=" * 55)
@@ -237,7 +330,7 @@ def imprimir_reporte(procesados: list, salteados: list, cargados: list, carga_er
     print(f"  Totales : {len(procesados)} proc. | {len(salteados)} cache. | {len(cargados)} chroma OK | {len(carga_errores)} chroma err.")
     print("=" * 55)
 
-def parsear_args() -> CargaConfig:
+def parsear_args() -> tuple[CargaConfig, bool]:
     parser = argparse.ArgumentParser(
         description="Saneamiento de PDFs y carga en ChromaDB para el pipeline RAG."
     )
@@ -260,6 +353,12 @@ def parsear_args() -> CargaConfig:
                         help="Reintentos ante rate limit (default: 3)")
     parser.add_argument("--retry-wait-seconds", type=int, default=60,
                         help="Segundos de espera entre reintentos (default: 60)")
+    parser.add_argument(
+        "--include-metadata-in-embedding",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Controla si se inyecta metadata textual al calcular embeddings (default: true).",
+    )
 
     parser.add_argument(
         "--refresh",
@@ -276,15 +375,12 @@ def parsear_args() -> CargaConfig:
         embedding_batch_size=args.embedding_batch_size,
         max_retries=args.max_retries,
         retry_wait_seconds=args.retry_wait_seconds,
+        include_metadata_in_embedding=args.include_metadata_in_embedding,
     )
     return config, args.refresh
 
 
-def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_callback=None) -> None:
-    def _report(**kwargs):
-        if progress_callback:
-            progress_callback(kwargs)
-
+def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False) -> None:
     if refresh:
         data_dir = ROOT / "data"
         if data_dir.exists():
@@ -310,40 +406,38 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_ca
     pdfs = sorted(CORPUS_DIR.rglob("*.pdf"))
     if not pdfs:
         print("Aviso: No hay pdfs en el corpus para procesar.")
-        _report(phase="ready", message="No hay documentos para procesar.")
         return
 
-    total = len(pdfs)
-    _report(phase="saneamiento", total_files=total, files_processed=0, current_file="", message="Escaneando corpus...")
-
-    for idx, pdf_path in enumerate(pdfs):
+    for pdf_path in pdfs:
         nombre = pdf_path.name
         sha256 = calcular_sha256(pdf_path)
 
         # Chequeamos el cache del registro a ver si podemos skipear la extraccion
-        if nombre in registro and registro[nombre].get("sha256") == sha256 and registro[nombre].get("cargado_en_chroma"):
+        if nombre in registro and registro[nombre].get("sha256") == sha256:
             print(f"  [cache] {nombre}")
             salteados.append(nombre)
-            _report(phase="saneamiento", total_files=total, files_processed=idx + 1, current_file=nombre, message=f"En caché: {nombre}")
             continue
 
         print(f"  [proc]  {nombre}")
-        _report(phase="saneamiento", total_files=total, files_processed=idx, current_file=nombre, message=f"Procesando: {nombre}")
 
-        texto_crudo, num_paginas = extraer_texto(pdf_path)
-        texto_limpio = sanear(texto_crudo)
+        paginas_crudas, num_paginas = extraer_texto(pdf_path)
+        paginas_limpias = sanear(paginas_crudas)
+        paginas_estructuradas = estructurar_paginas_en_secciones(paginas_limpias)
 
-        doc = {
-            'content':        texto_limpio,
-            'source':         nombre,
-            'sha256':         sha256,
-            'pages':          num_paginas,
-            'chars_original': len(texto_crudo),
-            'chars_saneado':  len(texto_limpio),
+        chars_original = sum(len(p) for p in paginas_crudas)
+        chars_saneado = sum(len(p) for p in paginas_limpias)
+
+        doc_json = {
+            "source": nombre,
+            "sha256": sha256,
+            "total_pages": num_paginas,
+            "chars_original": chars_original,
+            "chars_saneado": chars_saneado,
+            "paginas": paginas_estructuradas,
         }
 
-        toon_path = OUTPUT_DIR / f"{pdf_path.stem}.toon"
-        guardar_toon(doc, toon_path)
+        json_path = OUTPUT_DIR / f"{pdf_path.stem}.json"
+        guardar_json(doc_json, json_path)
 
         # Derivamos la materia del subdirectorio en corpus/
         relative = pdf_path.relative_to(CORPUS_DIR)
@@ -352,16 +446,15 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_ca
         # Actualizamos el estado para la etapa de embeddings (carga.py)
         registro[nombre] = {
             "sha256":         sha256,
-            "toon":           toon_path.relative_to(ROOT).as_posix(),
+            "json_path":      json_path.relative_to(ROOT).as_posix(),
             "pages":          num_paginas,
-            "chars_original": len(texto_crudo),
-            "chars_saneado":  len(texto_limpio),
+            "chars_original": chars_original,
+            "chars_saneado":  chars_saneado,
             "cargado_en_chroma": False,
             "materia":        materia,
         }
 
-        procesados.append(doc)
-        _report(phase="saneamiento", total_files=total, files_processed=idx + 1, current_file=nombre, message=f"Saneado: {nombre}")
+        procesados.append(doc_json)
 
         # Guardamos el registro por si el script falla al parsear el siguiente
         guardar_registro(registro)
@@ -371,9 +464,8 @@ def ejecutar_saneamiento(config: CargaConfig, refresh: bool = False, progress_ca
 
     if nuevos_archivos:
         print(f"\n[sanear] Iniciando carga en lote a ChromaDB para {len(nuevos_archivos)} archivos nuevos...")
-        _report(phase="embeddings", total_files=len(nuevos_archivos), files_processed=0, current_file="", message=f"Generando embeddings para {len(nuevos_archivos)} archivos...")
         try:
-            resultados = procesar_lote_documentos(nuevos_archivos, config=config, progress_callback=progress_callback)
+            resultados = procesar_lote_documentos(nuevos_archivos, config=config)
             for nombre, ok in resultados:
                 if ok:
                     cargados.append(nombre)

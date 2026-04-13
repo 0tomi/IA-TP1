@@ -194,6 +194,10 @@ def pedir_configuracion() -> RAGServiceConfig:
         defaults.chunk_overlap = last.get("chunk_overlap", defaults.chunk_overlap)
         defaults.chunking_technique = last.get("chunking_technique", defaults.chunking_technique)
         defaults.embedding_batch_size = last.get("embedding_batch_size", defaults.embedding_batch_size)
+        defaults.include_metadata_in_embedding = last.get(
+            "include_metadata_in_embedding",
+            defaults.include_metadata_in_embedding,
+        )
 
     print()
     modo = _select(
@@ -219,7 +223,7 @@ def pedir_configuracion() -> RAGServiceConfig:
             ("embedding_model", defaults.embedding_model), ("chunking_technique", defaults.chunking_technique),
             ("embedding_batch_size", defaults.embedding_batch_size), ("max_retries", defaults.max_retries),
             ("retry_wait_seconds", defaults.retry_wait_seconds), ("refresh", defaults.refresh),
-            ("debug", defaults.debug),
+            ("include_metadata_in_embedding", defaults.include_metadata_in_embedding), ("debug", defaults.debug),
         ]:
             print(f"    {k:<22}: {v}")
         prompt_preview = defaults.system_prompt.split("\n")[0][:60]
@@ -298,6 +302,12 @@ def pedir_configuracion() -> RAGServiceConfig:
     def paso_embedding_batch_size(kw):
         return _int("  Batch size de embeddings:", defaults.embedding_batch_size)
 
+    def paso_include_metadata_in_embedding(kw):
+        return _confirm(
+            "  ¿Incluir metadata (materia/sección/página/documento) al calcular embeddings?",
+            defaults.include_metadata_in_embedding,
+        )
+
     def paso_max_retries(kw):
         return _int("  Reintentos máximos (max_retries):", defaults.max_retries)
 
@@ -337,6 +347,7 @@ def pedir_configuracion() -> RAGServiceConfig:
         ("embedding_model",     paso_embedding_model),
         ("chunking_technique",  paso_chunking_technique),
         ("embedding_batch_size",paso_embedding_batch_size),
+        ("include_metadata_in_embedding", paso_include_metadata_in_embedding),
         ("refresh",             paso_refresh),
     ]
 
@@ -367,6 +378,7 @@ def pedir_configuracion() -> RAGServiceConfig:
         "embedding_model": defaults.embedding_model,
         "chunking_technique": defaults.chunking_technique,
         "embedding_batch_size": defaults.embedding_batch_size,
+        "include_metadata_in_embedding": defaults.include_metadata_in_embedding,
         "max_retries": defaults.max_retries,
         "retry_wait_seconds": defaults.retry_wait_seconds,
         "refresh": defaults.refresh,
